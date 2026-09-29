@@ -1,0 +1,138 @@
+name: Build Sahaj Offline Executable
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository code
+      uses: actions/checkout@v4
+
+    - name: Setup Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Install PyTorch and Fairseq Dependencies
+      run: |
+        python -m pip install "pip<24.1"
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        pip install git+https://github.com/facebookresearch/fairseq.git
+
+    - name: Install Application Requirements
+      run: |
+        pip install PyQt6 requests ai4bharat-transliteration pyinstaller scikit-learn py-machineid cryptography
+        pip install indic-asr-onnx pyaudio huggingface_hub transformers tokenizers onnxruntime psutil
+
+    - name: Download and extract FFmpeg for Windows
+      run: |
+        curl -L https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip -o ffmpeg.zip
+        Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg_temp
+        $ffmpeg_dir = Get-ChildItem -Path ffmpeg_temp -Directory | Select-Object -First 1
+        New-Item -ItemType Directory -Force -Path ffmpeg_bin
+        Copy-Item -Path "$($ffmpeg_dir.FullName)\bin\*.dll" -Destination ffmpeg_bin\ -Force
+        Copy-Item -Path "$($ffmpeg_dir.FullName)\bin\ffmpeg.exe" -Destination ffmpeg_bin\ -Force
+        Write-Host "FFmpeg DLLs copied to ffmpeg_bin"
+
+    - name: Verify FFmpeg DLLs
+      run: |
+        if (Test-Path ffmpeg_bin) {
+          Write-Host "ffmpeg_bin exists. Contents:"
+          dir ffmpeg_bin
+        } else {
+          Write-Host "ffmpeg_bin NOT found!"
+          exit 1
+        }
+
+    - name: Patch fairseq/dataclass/configs.py to fix 'help' error
+      run: |
+        @"
+        import os, sys
+        sys.path.insert(0, os.path.join(sys.prefix, 'Lib', 'site-packages'))
+        import fairseq.dataclass.configs
+        f = fairseq.dataclass.configs.__file__
+        with open(f, 'r', encoding='utf-8') as fp:
+            content = fp.read()
+        if 'help = ""' not in content:
+            with open(f, 'w', encoding='utf-8') as fp:
+                fp.write('help = ""\n' + content)
+        print("Patched", f)
+        "@ > patch_fairseq.py
+        python patch_fairseq.py
+
+    - name: Download & Copy Extracted AI4Bharat Transliteration Models
+      run: |
+        python -c "from ai4bharat.transliteration import XlitEngine; XlitEngine('as', beam_width=4, rescore=False)"
+        python -c "import os, shutil, ai4bharat; pkg_dir = os.path.dirname(ai4bharat.__file__); v1_dir = os.path.join(pkg_dir, 'transliteration', 'transformer', 'models', 'en2indic', 'v1.0'); os.makedirs('offline_model_cache', exist_ok=True); shutil.copytree(v1_dir, 'offline_model_cache', dirs_exist_ok=True)"
+
+    - name: Copy lang_list.txt for bundling
+      run: |
+        python -c "import os, shutil, ai4bharat; pkg_dir = os.path.dirname(ai4bharat.__file__); src = os.path.join(pkg_dir, 'transliteration', 'transformer', 'models', 'en2indic', 'lang_list.txt'); shutil.copy2(src, 'lang_list.txt')"
+
+    - name: Pre-download and cache the ASR model for voice typing
+      run: |
+        @"
+        import os
+        import shutil
+        from indic_asr_onnx import IndicTranscriber
+
+        # Force download (saves to huggingface cache)
+        transcriber = IndicTranscriber()
+        print('ASR model downloaded successfully.')
+
+        # Locate the model folder inside huggingface cache
+        hub_cache = os.path.expanduser('~/.cache/huggingface/hub')
+        print(f'Searching in {hub_cache}')
+        if not os.path.exists(hub_cache):
+            raise FileNotFoundError('Hugging Face cache directory not found.')
+
+        found = False
+        for item in os.listdir(hub_cache):
+            if item.startswith('models--') and ('indic' in item.lower() or 'asr' in item.lower()):
+                src = os.path.join(hub_cache, item)
+                if os.path.isdir(src):
+                    # Copy the ENTIRE model folder (preserving its name) into indic_asr_cache
+                    target_dir = os.path.join('indic_asr_cache', item)
+                    os.makedirs('indic_asr_cache', exist_ok=True)
+                    shutil.copytree(src, target_dir, dirs_exist_ok=True)
+                    print(f'Copied ASR model from {src} to {target_dir}')
+                    found = True
+                    break
+
+        if not found:
+            print('Available items in cache:', os.listdir(hub_cache))
+            raise FileNotFoundError('Could not find ASR model in huggingface cache.')
+
+        # Verify
+        if os.path.exists('indic_asr_cache') and os.listdir('indic_asr_cache'):
+            print('indic_asr_cache is ready.')
+            for root, dirs, files in os.walk('indic_asr_cache'):
+                print(f'  {root}: {len(files)} files')
+        else:
+            raise RuntimeError('Failed to create indic_asr_cache or it is empty.')
+        "@ > download_asr.py
+        python download_asr.py
+
+    - name: List cached files (debugging)
+      run: |
+        dir offline_model_cache
+        dir lang_list.txt
+        if (Test-Path indic_asr_cache) { dir indic_asr_cache } else { Write-Host "indic_asr_cache not found" }
+        if (Test-Path ffmpeg_bin) { dir ffmpeg_bin } else { Write-Host "ffmpeg_bin not found" }
+
+    - name: Build Executable via PyInstaller
+      run: |
+        pyinstaller --noconfirm --onedir --windowed --icon icon.ico --add-data "assamese_dictionary.txt;." --add-data "dictionary.json;." --add-data "Nirmala.ttf;." --add-data "Banikanta.ttf;." --add-data "header_logo.png;." --add-data "header_icon.png;." --add-data "splash_animation.gif;." --add-data "donate_qr.png;." --add-data "lang_list.txt;ai4bharat/transliteration/transformer/models/en2indic" --add-data "offline_model_cache;ai4bharat/transliteration/transformer/models/en2indic/v1.0" --add-data "indic_asr_cache;indic_asr_cache" --add-data "ffmpeg_bin;ffmpeg_bin" --collect-all fairseq --collect-all hydra --collect-all omegaconf --collect-all sklearn --collect-all torch --collect-all numpy --collect-all onnxruntime --collect-all huggingface_hub --collect-all transformers --collect-all tokenizers --collect-all indic_asr_onnx --collect-all torchaudio --collect-all torchcodec --hidden-import=machineid main.py
+
+    - name: Zip Final Build Folder
+      run: |
+        Compress-Archive -Path dist/main/* -DestinationPath Sahaj_v1_1_Offline.zip
+
+    - name: Upload Compressed Executable Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Sahaj_v1_1_Offline_Windows
+        path: Sahaj_v1_1_Offline.zip
