@@ -15,6 +15,8 @@ except ImportError as e:
     voice_typing = None
     print(f"Voice typing module not available: {e}")
 
+import sahaj_license
+
 try:
     import typing_modes
     HAS_TYPING_MODES = True
@@ -1541,6 +1543,43 @@ class AssameseTypingApp(QMainWindow):
         self.setWindowTitle("সহজ-Sahaj v3.0")
         self.resize(1050, 750)
         self.settings = QSettings("NazmulDev", "SahajApp")
+        # --- LICENSING ---
+        if not sahaj_license.is_licensed():
+            from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton
+
+            class ActivationDialog(QDialog):
+                def __init__(self, parent=None):
+                    super().__init__(parent)
+                    self.setWindowTitle("Activate সহজ-Sahaj")
+                    self.setFixedSize(420, 260)
+                    layout = QVBoxLayout(self)
+                    layout.addWidget(QLabel("Enter the license key that was emailed to you:"))
+                    self.key_input = QLineEdit()
+                    self.key_input.setPlaceholderText("XXXX-XXXX-XXXX-XXXX")
+                    layout.addWidget(self.key_input)
+                    self.status_label = QLabel("")
+                    layout.addWidget(self.status_label)
+                    btn = QPushButton("Activate Sahaj AI")
+                    btn.clicked.connect(self.do_activate)
+                    layout.addWidget(btn)
+                    self.activated = False
+
+                def do_activate(self):
+                    key = self.key_input.text().strip().upper()
+                    if not key:
+                        self.status_label.setText("Please enter a license key.")
+                        return
+                    self.status_label.setText("Activating...")
+                    ok, msg = sahaj_license.activate(key)
+                    if ok:
+                        self.activated = True
+                        self.accept()
+                    else:
+                        self.status_label.setText(msg)
+
+            dialog = ActivationDialog(self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                sys.exit(0)
         user_data = get_user_data_dir()
         self.autosave_file = os.path.join(user_data, "autosave.txt")
         self.helpers_file = os.path.join(user_data, "helpers.json")
@@ -1848,10 +1887,10 @@ class AssameseTypingApp(QMainWindow):
         self.engine_combo = ModernComboBox()
         self.engine_combo.setToolTip(
             "Choose the translation engine or a typing mode.\n"
-            "• Live AI       – online transliteration (Google)\n"
-            "• Built-In AI   – offline AI4Bharat engine\n"
-            "• Mouse Typing  – click on-screen Assamese letters\n"
-            "• Inscript Typing – type Assamese with the physical keyboard"
+            "• Live AI       – Online transliteration\n"
+            "• Built-In AI   – Offline In-built engine\n"
+            "• Mouse Typing  – Click on-screen Assamese letters\n"
+            "• Inscript Typing – Type Assamese with the physical keyboard"
         )
         self.engine_combo.addItems(
             ["Live AI", "Built-In AI", "Mouse Typing", "Inscript Typing"]
@@ -2022,6 +2061,11 @@ class AssameseTypingApp(QMainWindow):
             "<a href='https://www.facebook.com/nazmul.hussain.319' style='color: #0D6EFD; text-decoration: none;'>App designed & developed by Nazmul Hussain</a>")
         dev_label.setOpenExternalLinks(True)
         dev_label.setFont(QFont("Arial", 10))
+        
+        # License status label
+        self.license_label = QLabel()
+        self.license_label.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.update_license_label()
 
         about_btn = QPushButton("ℹ️ About")
         about_btn.setFixedWidth(80)
@@ -2059,6 +2103,7 @@ class AssameseTypingApp(QMainWindow):
             }
         """)
         support_btn.clicked.connect(self.show_support_dialog)
+        footer_layout.addWidget(self.license_label)
         footer_layout.addStretch()
         footer_layout.addWidget(dev_label)
         footer_layout.addWidget(about_btn)
@@ -2078,6 +2123,16 @@ class AssameseTypingApp(QMainWindow):
 
         if getattr(self, "typing_manager", None):
             self.typing_manager.set_theme(self.current_theme)
+
+    def update_license_label(self):
+        """Update the footer label showing license status."""
+        email = sahaj_license.get_licensed_email()
+        if email:
+            self.license_label.setText(f"✅ Licensed to: {email}")
+            self.license_label.setStyleSheet("color: #198754;")  # green
+        else:
+            self.license_label.setText("⚠️ Unregistered")
+            self.license_label.setStyleSheet("color: #DC3545;")  # red
 
     def closeEvent(self, event):
         # 1. Flush the editor to disk one last time
@@ -2462,11 +2517,14 @@ class AssameseTypingApp(QMainWindow):
         features_text.setFont(QFont("Arial", 10))
         features_text.setHtml("""
 <ul>
-<li>🌐 <b>Offline Transliteration</b> — Powered by AI4Bharat Xlit Engine for full offline execution.</li>
+<li>🌐 <b>Online and Offline Transliteration</b> — Powered by Google-AI and AI-Xlit Engine for full online and offline execution.</li>
 <li>🔤 <b>Phonetic Typing</b> — Type English (e.g., <i>bhuktobhugi</i>) and get instant Assamese output (<i>ভুক্তভোগী</i>).</li>
-<li>✅ <b>Spell & Grammar Checking</b> — Misspelled Assamese words are underlined in red; right‑click for suggestions.</li>
+<li>🔤 <b>Voice Typing</b> — Say a sentence to see it in the Editor with great accuracy. Works totally Offline.</li>
+<li>✅ <b>Mouse Typing</b> — Easily type difficult and your words with clicks of your mouse.</li>
+<li>✅ <b>Inscript Typing</b> — Expert in Assamese Typing? You have it here- Traditional Inscript Typing.</li>
+<li>📖 <b>Spell & Grammar Checking</b> — Misspelled Assamese words are underlined in red; right‑click for suggestions.</li>
 <li>✅ <b>English to Assamese Translation</b> — Translate an English word to Assamese and add it to the Editor.</li>
-<li>📖 <b>Built‑in Dictionary</b> — Hover over any Assamese word to see its English meaning.</li>
+<li>✅ <b>Assamese to English Translation</b> — Translate an Assamese word or sentence typed in to know its English translation and meaning.</li>
 <li>🧩 <b>Draggable Helper Buttons</b> — One‑click insertion of frequently used legal phrases. Add, delete, and reorder.</li>
 <li>💾 <b>Autosave</b> — Your work is saved automatically every 4 seconds.</li>
 <li>🌗 <b>Light / Dark Theme</b> — Toggle between light and dark modes with one click.</li>
