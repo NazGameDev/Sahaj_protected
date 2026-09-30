@@ -74,7 +74,7 @@ def activate(license_key):
         resp = requests.post(
             f"{LICENSE_API}/activate",
             json={"license_key": license_key, "machine_id": machine_id_str},
-            timeout=15,
+            timeout=10,
         )
         data = resp.json()
     except requests.RequestException:
