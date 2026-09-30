@@ -35,14 +35,16 @@ def _get_stored_token():
         return None
 
 def _save_token(token):
-    _settings().setValue("license/token", json.dumps(token))
+    s = _settings()
+    s.setValue("license/token", json.dumps(token))
+    s.sync()  # force write to registry immediately
 
 def _verify_token(token):
     """Verify Ed25519 signature and machine_id."""
     if not token or "payload" not in token or "signature" not in token:
         return False
     try:
-        payload_bytes = json.dumps(token["payload"], sort_keys=True).encode()
+        payload_bytes = json.dumps(token["payload"], sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
         signature = base64.b64decode(token["signature"])
         public_key = Ed25519PublicKey.from_public_bytes(base64.b64decode(PUBLIC_KEY_B64))
         public_key.verify(signature, payload_bytes)
