@@ -1543,43 +1543,6 @@ class AssameseTypingApp(QMainWindow):
         self.setWindowTitle("সহজ-Sahaj v3.0")
         self.resize(1050, 750)
         self.settings = QSettings("NazmulDev", "SahajApp")
-        # --- LICENSING ---
-        if not sahaj_license.is_licensed():
-            from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton
-
-            class ActivationDialog(QDialog):
-                def __init__(self, parent=None):
-                    super().__init__(parent)
-                    self.setWindowTitle("Activate সহজ-Sahaj")
-                    self.setFixedSize(420, 260)
-                    layout = QVBoxLayout(self)
-                    layout.addWidget(QLabel("Enter the license key that was emailed to you:"))
-                    self.key_input = QLineEdit()
-                    self.key_input.setPlaceholderText("XXXX-XXXX-XXXX-XXXX")
-                    layout.addWidget(self.key_input)
-                    self.status_label = QLabel("")
-                    layout.addWidget(self.status_label)
-                    btn = QPushButton("Activate Sahaj AI")
-                    btn.clicked.connect(self.do_activate)
-                    layout.addWidget(btn)
-                    self.activated = False
-
-                def do_activate(self):
-                    key = self.key_input.text().strip().upper()
-                    if not key:
-                        self.status_label.setText("Please enter a license key.")
-                        return
-                    self.status_label.setText("Activating...")
-                    ok, msg = sahaj_license.activate(key)
-                    if ok:
-                        self.activated = True
-                        self.accept()
-                    else:
-                        self.status_label.setText(msg)
-
-            dialog = ActivationDialog(self)
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                sys.exit(0)
         user_data = get_user_data_dir()
         self.autosave_file = os.path.join(user_data, "autosave.txt")
         self.helpers_file = os.path.join(user_data, "helpers.json")
@@ -2533,7 +2496,7 @@ class AssameseTypingApp(QMainWindow):
         features_text.setMaximumHeight(280)
         layout.addWidget(features_text)
 
-        credit = QLabel("👨‍💻 Developed by <b>Nazmul Hussain</b>")
+        credit = QLabel("👨‍💻 Developed by <b>Nazmul Hussain</b><br>Contact Me: hussainnazmul786@gmail.com")
         credit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         credit.setFont(QFont("Arial", 10))
         layout.addWidget(credit)
@@ -2599,6 +2562,86 @@ class AssameseTypingApp(QMainWindow):
 
         dialog.exec()
 
+class ActivationDialog(QDialog):
+    """Modal dialog shown when the app is not yet licensed."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Activate সহজ-Sahaj")
+        self.setFixedSize(460, 300)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        layout.addWidget(QLabel(
+            "Enter the license key that was emailed to you after purchase:"
+        ))
+
+        self.key_input = QLineEdit()
+        self.key_input.setPlaceholderText("XXXX-XXXX-XXXX-XXXX")
+        layout.addWidget(self.key_input)
+
+        self.status_label = QLabel("")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+
+        btn_row = QHBoxLayout()
+        self.activate_btn = QPushButton("Activate Sahaj AI")
+        self.activate_btn.clicked.connect(self.do_activate)
+        btn_row.addWidget(self.activate_btn)
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(self.cancel_btn)
+
+        layout.addLayout(btn_row)
+
+        machine_label = QLabel(
+            "Machine ID (for support):\n"
+            f"{sahaj_license._get_machine_id()}"
+        )
+        machine_label.setStyleSheet("font-size: 9px; color: gray;")
+        machine_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        layout.addWidget(machine_label)
+
+        self.activated = False
+
+    def do_activate(self):
+        key = self.key_input.text().strip().upper()
+        if not key:
+            self.status_label.setText("Please enter a license key.")
+            return
+
+        self.activate_btn.setEnabled(False)
+        self.status_label.setText("Checking with server... (this may take up to 8 seconds)")
+        QApplication.processEvents()
+
+        ok, msg = sahaj_license.activate(key)
+
+        self.activate_btn.setEnabled(True)
+
+        if ok:
+            self.activated = True
+            self.accept()
+        else:
+            self.status_label.setText(msg)
+
+
+def ensure_licensed():
+    """Check if licensed. If not, show the activation dialog.
+    Returns True if the app should continue, False to exit."""
+    if sahaj_license.is_licensed():
+        return True
+    dialog = ActivationDialog()
+    # Ensure the dialog is on top of everything (including any splash)
+    dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+    dialog.raise_()
+    dialog.activateWindow()
+    if dialog.exec() == QDialog.DialogCode.Accepted:
+        return True
+    return False
 
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
@@ -2619,6 +2662,10 @@ if __name__ == "__main__":
     app_icon_path = resource_path("header_icon.png")
     if os.path.exists(app_icon_path):
         app.setWindowIcon(QIcon(app_icon_path))
+
+        # --- LICENSE CHECK (before splash) ---
+        if not ensure_licensed():
+            sys.exit(0)
 
         available_families = []
 
