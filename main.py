@@ -2480,15 +2480,15 @@ class AssameseTypingApp(QMainWindow):
         features_text.setFont(QFont("Arial", 10))
         features_text.setHtml("""
 <ul>
-<li>🌐 <b>Online and Offline Transliteration</b> — Powered by Google-AI and AI-Xlit Engine for full online and offline execution.</li>
+<li>🌐 <b>Online and Offline Transliteration</b> — Powered by Google-AI and AI-Xlit Engine for full online and offline phonetic execution.</li>
 <li>🔤 <b>Phonetic Typing</b> — Type English (e.g., <i>bhuktobhugi</i>) and get instant Assamese output (<i>ভুক্তভোগী</i>).</li>
-<li>🔤 <b>Voice Typing</b> — Say a sentence to see it in the Editor with great accuracy. Works totally Offline.</li>
-<li>✅ <b>Mouse Typing</b> — Easily type difficult and your words with clicks of your mouse.</li>
-<li>✅ <b>Inscript Typing</b> — Expert in Assamese Typing? You have it here- Traditional Inscript Typing.</li>
-<li>📖 <b>Spell & Grammar Checking</b> — Misspelled Assamese words are underlined in red; right‑click for suggestions.</li>
-<li>✅ <b>English to Assamese Translation</b> — Translate an English word to Assamese and add it to the Editor.</li>
-<li>✅ <b>Assamese to English Translation</b> — Translate an Assamese word or sentence typed in to know its English translation and meaning.</li>
-<li>🧩 <b>Draggable Helper Buttons</b> — One‑click insertion of frequently used legal phrases. Add, delete, and reorder.</li>
+<li>🔤 <b>Voice Typing</b> — Dictate on the go! Enjoy high-precision voice recognition that keeps your data private and works entirely offline.</li>
+<li>✅ <b>Mouse Typing</b> — Take the struggle out of complex characters. Click your way to perfect Assamese sentences with ease.</li>
+<li>✅ <b>Inscript Typing</b> — Maximize your productivity. Tap into your muscle memory with our seamless Inscript integration.</li>
+<li>📖 <b>Spell & Grammar Checking</b> — Never worry about mistakes again. Smart diagnostics highlight errors and suggest instant fixes.</li>
+<li>✅ <b>English to Assamese Translation</b> — Expand your vocabulary. Seamlessly convert and insert Assamese translations without leaving the editor.</li>
+<li>✅ <b>Assamese to English Translation</b> — Understand more, faster. Smoothly translate your text to English to explore definitions without interrupting your workflow.</li>
+<li>🧩 <b>Draggable Helper Buttons</b> — One‑click insertion of frequently used phrases defined by you. Add, delete, or reorder.</li>
 <li>💾 <b>Autosave</b> — Your work is saved automatically every 4 seconds.</li>
 <li>🌗 <b>Light / Dark Theme</b> — Toggle between light and dark modes with one click.</li>
 </ul>
