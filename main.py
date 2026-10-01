@@ -1598,6 +1598,9 @@ class AssameseTypingApp(QMainWindow):
         # to avoid two heavy model loads fighting for resources.
         self.asr_transcriber = None
         self.asr_loader_thread = None
+        # Keep strong references to running QThreads so Python's GC
+        # doesn't destroy them mid-signal (a classic PyQt crash source).
+        self._running_workers = []
         self.init_ui()
         self.load_autosave()
         self.load_helper_buttons()
@@ -1702,23 +1705,32 @@ class AssameseTypingApp(QMainWindow):
         self.countdown_timer.stop()
         self.voice_timer_label.hide()
         self.voice_progress.setValue(100)
-        self.voice_progress.hide()  # hide progress bar
+        self.voice_progress.hide()
         self.voice_btn.setEnabled(False)
         self.voice_btn.setText("⏳ Transcribing...")
+
+        # Let the old recorder object be retired by Qt's own lifecycle
+        # rather than setting it to None here — avoids a race where
+        # Python GC drops the QThread while it's still emitting signals.
+        old_recorder = self.recording_worker
         self.recording_worker = None
-        
-        self.transcriber_thread = voice_typing.VoiceTypingWorker(
+        if old_recorder is not None:
+            self._track_worker(old_recorder)
+
+        worker = voice_typing.VoiceTypingWorker(
             audio_filepath,
             transcriber=self.asr_transcriber,
         )
-        self.transcriber_thread.finished.connect(self.on_voice_transcribed)
-        self.transcriber_thread.error.connect(self.on_voice_error)
-        self.transcriber_thread.start()
+        worker.finished.connect(self.on_voice_transcribed)
+        worker.error.connect(self.on_voice_error)
+        self._track_worker(worker)
+        self.transcriber_thread = worker
+        worker.start()
 
     def on_voice_transcribed(self, text):
         """Handle successful transcription."""
         self.voice_progress.hide()
-        self.voice_progress.setValue(100)  # reset for next time
+        self.voice_progress.setValue(100)
         if text and text.strip():
             self.text_area.insertPlainText(text + " ")
             self.text_area.setFocus()
@@ -1727,17 +1739,18 @@ class AssameseTypingApp(QMainWindow):
             self.text_area.setTextCursor(cursor)
         self.voice_btn.setEnabled(True)
         self.voice_btn.setText("🎤 Voice Typing")
+        self.transcriber_thread = None
 
     def on_voice_error(self, error_message):
         """Handle transcription errors."""
         self.countdown_timer.stop()
         self.voice_timer_label.hide()
         self.voice_progress.hide()
-        self.voice_progress.setValue(100)  # reset for next time
+        self.voice_progress.setValue(100)
         QMessageBox.critical(self, "Voice Typing Error", error_message)
         self.voice_btn.setEnabled(True)
         self.voice_btn.setText("🎤 Voice Typing")
-        self.recording_worker = None
+        self.transcriber_thread = None
 
     def update_countdown(self):
         self.remaining_seconds -= 1
@@ -1784,8 +1797,20 @@ class AssameseTypingApp(QMainWindow):
         self.asr_transcriber = transcriber
         if transcriber is not None:
             print("ASR model ready. Voice typing will be fast.")
+            try:
+                self.voice_btn.setEnabled(True)
+                self.voice_btn.setText("🎤 Voice Typing")
+                self.voice_btn.setToolTip("Click to start voice typing in Assamese")
+            except Exception:
+                pass
         else:
             print("ASR model not available. Voice typing will load on demand.")
+            try:
+                self.voice_btn.setEnabled(True)
+                self.voice_btn.setText("🎤 Voice Typing")
+                self.voice_btn.setToolTip("ASR model failed to pre-load; it will load on first use.")
+            except Exception:
+                pass
 
     def show_engine_error(self, message):
         # Defer the popup so it appears after the splash closes.
@@ -1921,8 +1946,9 @@ class AssameseTypingApp(QMainWindow):
         self.engine_combo.setCurrentIndex(0)
         self.engine_combo.currentIndexChanged.connect(self.on_engine_mode_changed)
 
-        self.voice_btn = QPushButton("🎤 Voice Typing")
-        self.voice_btn.setToolTip("Click to start voice typing in Assamese")
+        self.voice_btn = QPushButton("🎤 Voice Typing (loading…)")
+        self.voice_btn.setToolTip("Voice typing is warming up. This takes a few seconds at startup.")
+        self.voice_btn.setEnabled(False)  # re-enabled when ASR is ready
         self.voice_btn.setStyleSheet("""
             QPushButton {
                 background-color: #6F42C1;
@@ -2150,6 +2176,17 @@ class AssameseTypingApp(QMainWindow):
             self.license_label.setText("⚠️ Unregistered")
             self.license_label.setStyleSheet("color: #DC3545;")  # red
 
+    def _track_worker(self, worker):
+        """Keep a strong reference to a running QThread."""
+        self._running_workers.append(worker)
+        worker.finished.connect(lambda w=worker: self._untrack_worker(w))
+
+    def _untrack_worker(self, worker):
+        try:
+            self._running_workers.remove(worker)
+        except ValueError:
+            pass
+
     def closeEvent(self, event):
         # 1. Flush the editor to disk one last time
         try:
@@ -2184,7 +2221,16 @@ class AssameseTypingApp(QMainWindow):
                 self.asr_loader_thread.wait(2000)
         except Exception:
             pass
-
+        # 6. Wait for any running worker threads so we don't crash on exit
+        try:
+            for w in list(getattr(self, "_running_workers", [])):
+                try:
+                    if w.isRunning():
+                        w.wait(2000)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         super().closeEvent(event)
 
     def redo_edit(self):
