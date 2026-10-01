@@ -366,6 +366,8 @@ def load_transcriber():
             log_error("Pre-loading IndicTranscriber (startup)...")
             transcriber = IndicTranscriber()
             log_error("Pre-loading IndicTranscriber: SUCCESS.")
+            # Force lazy init NOW instead of on the user's first recording
+            _warm_up_transcriber(transcriber)
             return transcriber
         except Exception as e:
             log_error(f"Pre-loading IndicTranscriber FAILED: {e}")
@@ -374,3 +376,32 @@ def load_transcriber():
             sys.stdout = old_stdout
             sys.stderr = old_stderr
             devnull.close()
+
+def _warm_up_transcriber(transcriber):
+    """
+    Run one silent inference to force indic_asr_onnx to do its
+    lazy initialization at startup, so the user's first recording
+    is instant instead of taking 10–30 seconds.
+    """
+    try:
+        # 1 second of silence at 16 kHz mono
+        silence = b'\x00\x00' * 16000
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tf:
+            temp_path = tf.name
+        try:
+            with wave.open(temp_path, 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(16000)
+                wf.writeframes(silence)
+
+            log_error("Running warm-up inference...")
+            transcriber.transcribe_rnnt(temp_path, "as")
+            log_error("Warm-up inference: SUCCESS.")
+        finally:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+    except Exception as e:
+        log_error(f"Warm-up inference FAILED (non-fatal): {e}")
