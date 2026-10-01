@@ -1477,6 +1477,17 @@ class AppLoaderThread(QThread):
 
         self.finished_loading.emit(spell_tool, dictionary, xlit_engine)
 
+class NetworkProbeThread(QThread):
+    """One-shot internet reachability probe, run in the background."""
+    result = pyqtSignal(bool)
+
+    def run(self):
+        try:
+            requests.head("https://www.google.com", timeout=3, allow_redirects=True)
+            self.result.emit(True)
+        except Exception:
+            self.result.emit(False)
+
 class ASRLoaderThread(QThread):
     """Loads the ASR model once at startup so voice typing is instant."""
     finished_loading = pyqtSignal(object)
@@ -1583,13 +1594,10 @@ class AssameseTypingApp(QMainWindow):
         self.loader_thread.finished_loading.connect(self.on_backend_loaded)
         self.loader_thread.error_signal.connect(self.show_engine_error)
         self.loader_thread.start()
-        # Pre-load the ASR (voice typing) model in the background so it's
-        # ready by the time the user clicks Record. This is the single biggest
-        # speedup for voice typing — it avoids reloading the model every time.
+        # ASR loader will be started AFTER the main loader finishes,
+        # to avoid two heavy model loads fighting for resources.
         self.asr_transcriber = None
-        self.asr_loader_thread = ASRLoaderThread()
-        self.asr_loader_thread.finished_loading.connect(self.on_asr_loaded)
-        self.asr_loader_thread.start()
+        self.asr_loader_thread = None
         self.init_ui()
         self.load_autosave()
         self.load_helper_buttons()
@@ -1600,12 +1608,14 @@ class AssameseTypingApp(QMainWindow):
         if QNetworkInformation.load(QNetworkInformation.Feature.Reachability):
             net_info = QNetworkInformation.instance()
             net_info.reachabilityChanged.connect(self.on_reachability_changed)
-            # Set the initial status based on the current state
-            self.on_reachability_changed(net_info.reachability())
+            # The OS-reported value is unreliable on startup (Windows
+            # often returns 'Unknown'), so we defer to a real probe.
         else:
-            # Fallback for unsupported platforms (very rare)
             print("Warning: QNetworkInformation is not supported on this platform.")
-            self.update_network_status(True) # Assume online as a last resort
+        # Definitive check: actual HTTP probe in the background.
+        self.net_probe = NetworkProbeThread()
+        self.net_probe.result.connect(self.update_network_status)
+        self.net_probe.start()
         self.spell_timer = QTimer()
         self.spell_timer.setSingleShot(True)
         self.spell_timer.timeout.connect(lambda: self.check_spelling())
@@ -1758,7 +1768,16 @@ class AssameseTypingApp(QMainWindow):
         if not self.spell_tool:
             QMessageBox.warning(self, "Spell Check Disabled",
                                 "Could not load the bundled dictionary.\nSpell checking will be disabled.")
+        if not self.xlit_engine:
+            QMessageBox.warning(self, "Offline Engine Disabled",
+                                "Could not load the offline transliteration engine.\n"
+                                "Built-In AI mode will not work.")
         self.check_spelling()
+
+        # NOW start the ASR loader — sequential, not concurrent.
+        self.asr_loader_thread = ASRLoaderThread()
+        self.asr_loader_thread.finished_loading.connect(self.on_asr_loaded)
+        self.asr_loader_thread.start()
 
     def on_asr_loaded(self, transcriber):
         """Called when the ASR model has finished pre-loading (or failed)."""
@@ -1769,8 +1788,9 @@ class AssameseTypingApp(QMainWindow):
             print("ASR model not available. Voice typing will load on demand.")
 
     def show_engine_error(self, message):
-        # This runs on the main GUI thread – safe to show popups!
-        QMessageBox.critical(self, "AI Engine Error", message)
+        # Defer the popup so it appears after the splash closes.
+        QTimer.singleShot(8000, lambda: QMessageBox.critical(
+            self, "AI Engine Error", message))
 
     def init_ui(self):
         main_widget = QWidget()
@@ -2181,17 +2201,12 @@ class AssameseTypingApp(QMainWindow):
 
     def on_reachability_changed(self, reachability):
         """
-        Called by the OS whenever the network reachability changes.
-        This is the new, event-driven replacement for the polling timer.
+        Called by the OS when network reachability changes.
+        IMPORTANT: only explicit 'Online' counts as online. 'Unknown' is
+        treated as offline because Windows often reports it when there is
+        no internet — treating it as online would show a false 'Online'.
         """
-        # The Reachability enum has several states. We'll treat
-        # 'Online' and 'Unknown' as being online. The OS reports
-        # 'Unknown' on some platforms when it can't be certain,
-        # but a connection is usually still present.
-        is_online = reachability in (
-            QNetworkInformation.Reachability.Online,
-            QNetworkInformation.Reachability.Unknown,
-        )
+        is_online = (reachability == QNetworkInformation.Reachability.Online)
         self.update_network_status(is_online)
 
     def update_network_status(self, is_online):
