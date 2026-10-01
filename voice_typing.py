@@ -153,9 +153,10 @@ class VoiceTypingWorker(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, audio_filepath, timeout_seconds=30):
+    def __init__(self, audio_filepath, transcriber=None, timeout_seconds=30):
         super().__init__()
         self.audio_filepath = audio_filepath
+        self.transcriber = transcriber  # pre-loaded instance (or None)
         self.timeout_seconds = timeout_seconds
 
     def run(self):
@@ -186,21 +187,25 @@ class VoiceTypingWorker(QThread):
             # Force offline mode
             os.environ['HF_HUB_OFFLINE'] = '1'
 
-            # Suppress stdout/stderr to avoid progress bar crashes in frozen app
-            devnull = open(os.devnull, 'w')
-            old_stdout = sys.stdout
-            old_stderr = sys.stderr
-            sys.stdout = devnull
-            sys.stderr = devnull
-
-            try:
-                log_error("Initializing IndicTranscriber...")
-                transcriber = IndicTranscriber()
-                log_error("IndicTranscriber initialized.")
-            finally:
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
-                devnull.close()
+            # Use pre-loaded transcriber if available, else load on demand
+            if self.transcriber is not None:
+                transcriber = self.transcriber
+                log_error("Using pre-loaded IndicTranscriber (fast path).")
+            else:
+                log_error("No pre-loaded transcriber — loading on demand (slow path).")
+                # Suppress stdout/stderr to avoid progress bar crashes in frozen app
+                devnull = open(os.devnull, 'w')
+                old_stdout = sys.stdout
+                old_stderr = sys.stderr
+                sys.stdout = devnull
+                sys.stderr = devnull
+                try:
+                    transcriber = IndicTranscriber()
+                    log_error("IndicTranscriber initialized on demand.")
+                finally:
+                    sys.stdout = old_stdout
+                    sys.stderr = old_stderr
+                    devnull.close()
 
             # Chunk and transcribe
             CHUNK_SECONDS = 12
@@ -298,3 +303,37 @@ class VoiceTypingWorker(QThread):
                     log_error(f"Deleted main audio file: {self.audio_filepath}")
             except Exception as e:
                 log_error(f"Failed to delete main audio file: {e}")
+
+
+def load_transcriber():
+    """Load the IndicTranscriber model once. Call this from a background thread
+    at app startup, then pass the result to VoiceTypingWorker.
+
+    Returns the transcriber instance, or None if loading fails.
+    """
+    if not HAS_ASR:
+        log_error("load_transcriber: HAS_ASR is False — skipping pre-load.")
+        return None
+
+    # Force offline mode (models are bundled)
+    os.environ['HF_HUB_OFFLINE'] = '1'
+
+    # Suppress stdout/stderr while loading (progress bars crash in frozen apps)
+    devnull = open(os.devnull, 'w')
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    sys.stdout = devnull
+    sys.stderr = devnull
+
+    try:
+        log_error("Pre-loading IndicTranscriber (startup)...")
+        transcriber = IndicTranscriber()
+        log_error("Pre-loading IndicTranscriber: SUCCESS.")
+        return transcriber
+    except Exception as e:
+        log_error(f"Pre-loading IndicTranscriber FAILED: {e}")
+        return None
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+        devnull.close()
