@@ -1477,6 +1477,21 @@ class AppLoaderThread(QThread):
 
         self.finished_loading.emit(spell_tool, dictionary, xlit_engine)
 
+class ASRLoaderThread(QThread):
+    """Loads the ASR model once at startup so voice typing is instant."""
+    finished_loading = pyqtSignal(object)
+
+    def run(self):
+        if voice_typing is None:
+            self.finished_loading.emit(None)
+            return
+        try:
+            transcriber = voice_typing.load_transcriber()
+            self.finished_loading.emit(transcriber)
+        except Exception as e:
+            print(f"ASR pre-load failed: {e}")
+            self.finished_loading.emit(None)
+
 class ModernComboBox(QComboBox):
     """
     A QComboBox with a fully-styleable, bezel-free popup.
@@ -1568,6 +1583,13 @@ class AssameseTypingApp(QMainWindow):
         self.loader_thread.finished_loading.connect(self.on_backend_loaded)
         self.loader_thread.error_signal.connect(self.show_engine_error)
         self.loader_thread.start()
+        # Pre-load the ASR (voice typing) model in the background so it's
+        # ready by the time the user clicks Record. This is the single biggest
+        # speedup for voice typing — it avoids reloading the model every time.
+        self.asr_transcriber = None
+        self.asr_loader_thread = ASRLoaderThread()
+        self.asr_loader_thread.finished_loading.connect(self.on_asr_loaded)
+        self.asr_loader_thread.start()
         self.init_ui()
         self.load_autosave()
         self.load_helper_buttons()
@@ -1675,7 +1697,10 @@ class AssameseTypingApp(QMainWindow):
         self.voice_btn.setText("⏳ Transcribing...")
         self.recording_worker = None
         
-        self.transcriber_thread = voice_typing.VoiceTypingWorker(audio_filepath)
+        self.transcriber_thread = voice_typing.VoiceTypingWorker(
+            audio_filepath,
+            transcriber=self.asr_transcriber,
+        )
         self.transcriber_thread.finished.connect(self.on_voice_transcribed)
         self.transcriber_thread.error.connect(self.on_voice_error)
         self.transcriber_thread.start()
@@ -1734,7 +1759,15 @@ class AssameseTypingApp(QMainWindow):
             QMessageBox.warning(self, "Spell Check Disabled",
                                 "Could not load the bundled dictionary.\nSpell checking will be disabled.")
         self.check_spelling()
-        
+
+    def on_asr_loaded(self, transcriber):
+        """Called when the ASR model has finished pre-loading (or failed)."""
+        self.asr_transcriber = transcriber
+        if transcriber is not None:
+            print("ASR model ready. Voice typing will be fast.")
+        else:
+            print("ASR model not available. Voice typing will load on demand.")
+
     def show_engine_error(self, message):
         # This runs on the main GUI thread – safe to show popups!
         QMessageBox.critical(self, "AI Engine Error", message)
@@ -2122,6 +2155,13 @@ class AssameseTypingApp(QMainWindow):
         try:
             if getattr(self, "typing_manager", None):
                 self.typing_manager.shutdown()
+        except Exception:
+            pass
+
+        # 5. Stop the ASR loader thread if it's still running
+        try:
+            if getattr(self, "asr_loader_thread", None) and self.asr_loader_thread.isRunning():
+                self.asr_loader_thread.wait(2000)
         except Exception:
             pass
 
