@@ -10,7 +10,6 @@ import threading
 from contextlib import contextmanager
 from PyQt6.QtCore import QThread, pyqtSignal, QTimer
 
-
 # --- Logging helper ---
 def log_error(msg):
     log_path = os.path.join(os.path.expanduser('~'), 'sahaj_voice_error.log')
@@ -23,6 +22,29 @@ def log_error(msg):
     except:
         pass
 
+def cleanup_old_temp_files(max_age_hours=24):
+    """Delete leftover Sahaj temp files from previous sessions."""
+    import glob
+    import time as _time
+    try:
+        temp_dir = tempfile.gettempdir()
+        now = _time.time()
+        cutoff = now - (max_age_hours * 3600)
+        removed = 0
+        for path in glob.glob(os.path.join(temp_dir, "tmp*.wav")):
+            try:
+                if os.path.getmtime(path) < cutoff:
+                    os.remove(path)
+                    removed += 1
+            except Exception:
+                pass
+        if removed:
+            log_error(f"Cleanup: removed {removed} leftover temp file(s).")
+    except Exception as e:
+        log_error(f"Cleanup failed (non-fatal): {e}")
+
+# Run once at module import
+cleanup_old_temp_files(max_age_hours=24)
 
 # --- Locate the bundled ASR cache dir (but DO NOT set HF_HUB_CACHE globally) ---
 _ASR_CACHE_DIR = None
