@@ -9,11 +9,7 @@ import difflib
 import unicodedata
 import shutil
 
-try:
-    import voice_typing
-except ImportError as e:
-    voice_typing = None
-    print(f"Voice typing module not available: {e}")
+voice_typing = None  # imported lazily after splash appears (see __main__)
 
 import sahaj_license
 
@@ -89,12 +85,8 @@ if getattr(sys, 'frozen', False):
     if os.path.exists(base_model_dir):
         os.environ['AI4BHARAT_XLIT_MODEL_DIR'] = base_model_dir
 
-# --- AI4BHARAT XLIT ENGINE IMPORT ---
-try:
-    from ai4bharat.transliteration import XlitEngine
-    HAS_XLIT = True
-except ImportError:
-    HAS_XLIT = False
+# --- AI4BHARAT XLIT ENGINE — imported lazily inside AppLoaderThread.run() ---
+HAS_XLIT = None  # determined at runtime
 
 # --- 1. DIRECTORY PATHING SETUP ---
 if getattr(sys, 'frozen', False):
@@ -1391,28 +1383,34 @@ class AppLoaderThread(QThread):
                 dictionary = {}
 
         xlit_engine = None
+        global HAS_XLIT
 
-        if HAS_XLIT:
-            try:
-                with suppress_stdout():
-                    xlit_engine = XlitEngine("as", beam_width=4, rescore=False)
+        try:
+            from ai4bharat.transliteration import XlitEngine
+            HAS_XLIT = True
+            with suppress_stdout():
+                xlit_engine = XlitEngine("as", beam_width=4, rescore=False)
 
-                test = xlit_engine.translit_word("test", topk=1)
-                if test:
-                    print("XlitEngine initialized successfully.")
-                else:
-                    print("XlitEngine initialized but returned empty test result.")
+            test = xlit_engine.translit_word("test", topk=1)
+            if test:
+                print("XlitEngine initialized successfully.")
+            else:
+                print("XlitEngine initialized but returned empty test result.")
 
-            except Exception as e:
-                import traceback
-                error_msg = f"Failed to load the AI transliteration engine.\n\nError: {str(e)}\n\nPlease check if models are properly installed."
-                print(error_msg)
-                log_path = os.path.join(os.path.expanduser('~'), 'sahaj_error.log')
-                with open(log_path, 'w', encoding='utf-8') as f:
-                    traceback.print_exc(file=f)
-                full_error = traceback.format_exc()
-                self.error_signal.emit(f"{error_msg}\n\nFull traceback:\n{full_error}")
-                xlit_engine = None
+        except ImportError:
+            HAS_XLIT = False
+            print("ai4bharat.transliteration not available — offline engine disabled.")
+        except Exception as e:
+            import traceback
+            HAS_XLIT = True  # import worked; only initialization failed
+            error_msg = f"Failed to load the AI transliteration engine.\n\nError: {str(e)}\n\nPlease check if models are properly installed."
+            print(error_msg)
+            log_path = os.path.join(os.path.expanduser('~'), 'sahaj_error.log')
+            with open(log_path, 'w', encoding='utf-8') as f:
+                traceback.print_exc(file=f)
+            full_error = traceback.format_exc()
+            self.error_signal.emit(f"{error_msg}\n\nFull traceback:\n{full_error}")
+            xlit_engine = None
 
         self.finished_loading.emit(spell_tool, dictionary, xlit_engine)
 
@@ -1585,7 +1583,7 @@ class AssameseTypingApp(QMainWindow):
 
     def _track_worker(self, worker):
         self._running_workers.append(worker)
-        worker.finished.connect(lambda w=worker: self._untrack_worker(w))
+        worker.finished.connect(lambda *_, w=worker: self._untrack_worker(w))
 
     def _untrack_worker(self, worker):
         try:
@@ -2852,22 +2850,12 @@ if __name__ == "__main__":
     clipboard.clear()
 
     app_icon_path = resource_path("header_icon.png")
-    if not os.path.exists(app_icon_path):
-        # Without an icon we can't proceed with the current structure,
-        # but we still want the app to launch. Fall back to a minimal startup.
-        pass
-
     if os.path.exists(app_icon_path):
         app.setWindowIcon(QIcon(app_icon_path))
 
     # --- LICENSE CHECK (before splash) ---
     if not ensure_licensed():
         sys.exit(0)
-
-    # --- Defer model copying into a background thread ---
-    # This is what made the splash appear late on first launch.
-    # We run it in the background so the splash can appear immediately.
-    setup_thread = SetupThread()
 
     # --- Load fonts (fast, main thread) ---
     available_families = []
@@ -2894,7 +2882,7 @@ if __name__ == "__main__":
     available_families = [f for f in available_families if not (f in seen or seen.add(f))]
     CUSTOM_FONT_FAMILIES = available_families
 
-    # --- Splash (visible immediately) ---
+    # --- Splash: shown BEFORE any heavy imports so it appears fast ---
     splash_gif_path = resource_path("splash_animation.gif")
 
     if os.path.exists(splash_gif_path):
@@ -2928,18 +2916,34 @@ if __name__ == "__main__":
     splash.show()
     app.processEvents()
 
-    # Start the background model-copy thread NOW that the splash is up
+    # ============================================================
+    # Everything below runs AFTER the splash is visible.
+    # Heavy imports are deferred so the splash appears faster.
+    # ============================================================
+
+    # voice_typing pulls in torch, transformers, onnxruntime, pyaudio.
+    # Deferring this import until after splash.show() makes a big
+    # difference on cold-boot launches.
+    try:
+        import voice_typing
+    except ImportError as e:
+        voice_typing = None
+        print(f"Voice typing module not available: {e}")
+
+    # Start the background model-copy thread now that the splash is up
+    setup_thread = SetupThread()
     setup_thread.start()
 
-    # --- Create the main window but keep it behind the splash ---
+    # Create the main window — positioned OFF-SCREEN so it doesn't
+    # peek around the splash. It will be brought on-screen (maximized)
+    # when the splash closes.
     main_window = AssameseTypingApp()
-    # Show it immediately (splash is on top, so user still sees splash)
-    main_window.show()
-    main_window.raise_()
+    main_window.move(-10000, -10000)
+    main_window.show()          # Paints off-screen
     app.processEvents()
 
     def finish_startup():
-        # If ASR or the main loader is still running, hint to the user.
+        # Hint about ongoing AI warm-up (shown if loaders still running)
         loading = False
         try:
             if getattr(main_window, "asr_loader_thread", None) and \
@@ -2958,8 +2962,19 @@ if __name__ == "__main__":
             except Exception:
                 pass
 
+        # Close the splash
         try:
             splash.close()
+        except Exception:
+            pass
+
+        # Now bring the main window on-screen, maximized
+        try:
+            main_window.move(0, 0)
+            app.processEvents()
+            main_window.showMaximized()
+            main_window.raise_()
+            main_window.activateWindow()
         except Exception:
             pass
 
