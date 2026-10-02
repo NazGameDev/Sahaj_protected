@@ -2943,40 +2943,86 @@ if __name__ == "__main__":
     app.processEvents()
 
     def finish_startup():
-        # Hint about ongoing AI warm-up (shown if loaders still running)
-        loading = False
-        try:
-            if getattr(main_window, "asr_loader_thread", None) and \
-                    main_window.asr_loader_thread.isRunning():
-                loading = True
-            if getattr(main_window, "loader_thread", None) and \
-                    main_window.loader_thread.isRunning():
-                loading = True
-        except Exception:
-            pass
-
-        if loading:
+        # ---- Helper: are the AI loaders still busy? ----
+        def loaders_busy():
             try:
-                main_window.network_status_label.setText("⏳ Warming up AI Engines...")
-                main_window.network_status_label.setStyleSheet("color: #fd7e14;")
+                if getattr(main_window, "asr_loader_thread", None) and \
+                        main_window.asr_loader_thread.isRunning():
+                    return True
+                if getattr(main_window, "loader_thread", None) and \
+                        main_window.loader_thread.isRunning():
+                    return True
             except Exception:
                 pass
+            return False
 
-        # Close the splash
+        # ---- Reveal the window while `cover` is still on top, then
+        #      dismiss the cover once Qt has finished painting. ----
+        def reveal_window_and_dismiss(cover):
+            try:
+                main_window.move(0, 0)
+                app.processEvents()
+                main_window.showMaximized()
+                main_window.raise_()
+                main_window.activateWindow()
+            except Exception:
+                pass
+            # Give Qt ~500 ms to fully paint behind the cover.
+            def _dismiss():
+                try:
+                    if cover is not None:
+                        cover.close()
+                except Exception:
+                    pass
+            QTimer.singleShot(500, _dismiss)
+
+        # ---- Fast path: no loaders running — reveal immediately. ----
+        if not loaders_busy():
+            reveal_window_and_dismiss(splash)
+            return
+
+        # ---- Slow path: swap the GIF for a static "warming up" panel ----
+        warmup = QLabel(
+            "সহজ-Sahaj v3.0\n\n"
+            "⏳ Warming up AI Engines...\n"
+            "This will take just a moment"
+        )
+        warmup.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        try:
+            warmup.setFixedSize(splash.size())
+            warmup.move(splash.geometry().topLeft())
+        except Exception:
+            warmup.setFixedSize(450, 250)
+        warmup.setWindowFlags(
+            Qt.WindowType.SplashScreen
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.FramelessWindowHint
+        )
+        warmup.setStyleSheet("""
+            QLabel {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                            stop:0 #2C3E50, stop:1 #3498DB);
+                color: white;
+                font-family: "Segoe UI";
+                font-size: 20px;
+                font-weight: bold;
+                border-radius: 12px;
+                padding: 20px;
+            }
+        """)
+        warmup.show()
         try:
             splash.close()
         except Exception:
             pass
 
-        # Now bring the main window on-screen, maximized
-        try:
-            main_window.move(0, 0)
-            app.processEvents()
-            main_window.showMaximized()
-            main_window.raise_()
-            main_window.activateWindow()
-        except Exception:
-            pass
+        # ---- Poll until loaders finish, then reveal window behind warmup ----
+        def poll():
+            if loaders_busy():
+                QTimer.singleShot(300, poll)
+            else:
+                reveal_window_and_dismiss(warmup)
+
+        QTimer.singleShot(300, poll)
 
     QTimer.singleShot(7000, finish_startup)
-    sys.exit(app.exec())
