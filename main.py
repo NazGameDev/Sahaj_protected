@@ -2983,9 +2983,8 @@ if __name__ == "__main__":
 
         # ---- Slow path: swap the GIF for a static "warming up" panel ----
         warmup = QLabel(
-            "সহজ-Sahaj v3.0\n\n"
-            "⏳ Warming up AI Engines...\n"
-            "This will take just a moment"
+            "⏳ Warming up Sahaj's AI Engines...\n"
+            "...Ready in just a moment !"
         )
         warmup.setAlignment(Qt.AlignmentFlag.AlignCenter)
         try:
@@ -3026,3 +3025,4 @@ if __name__ == "__main__":
         QTimer.singleShot(300, poll)
 
     QTimer.singleShot(7000, finish_startup)
+    sys.exit(app.exec())
