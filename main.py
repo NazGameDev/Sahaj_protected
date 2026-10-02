@@ -1714,16 +1714,34 @@ class AssameseTypingApp(QMainWindow):
             self.voice_progress.setValue(0)
 
     def on_backend_loaded(self, spell_tool, dictionary, xlit_engine):
+        # Honor the user's spell-check preference
+        spell_enabled = QSettings("NazmulDev", "SahajApp").value(
+            "settings/spell_check", True, type=bool
+        )
+        if not spell_enabled:
+            spell_tool = None
+            print("Spell check disabled by user setting.")
+
         self.spell_tool = spell_tool
         self.dictionary = dictionary
         self.xlit_engine = xlit_engine
-        if not self.spell_tool:
-            QMessageBox.warning(self, "Spell Check Disabled",
-                                "Could not load the bundled dictionary.\nSpell checking will be disabled.")
+
+        # Only warn if the user actually wanted spell check but it failed to load
+        if not self.spell_tool and spell_enabled:
+            QMessageBox.warning(
+                self,
+                "Spell Check Disabled",
+                "Could not load the bundled dictionary.\nSpell checking will be disabled.",
+            )
         if not self.xlit_engine:
-            QMessageBox.warning(self, "Offline Engine Disabled",
-                                "Could not load the offline transliteration engine.\n"
-                                "Built-In AI mode will not work.")
+            QMessageBox.warning(
+                self,
+                "Offline Engine Disabled",
+                "Could not load the offline transliteration engine.\n"
+                "Built-In AI mode will not work.",
+            )
+
+        # Re-trigger spell check now that the tool is available
         self.check_spelling()
 
         # --- Start the ASR loader only if the user wants it ---
@@ -2174,12 +2192,6 @@ class AssameseTypingApp(QMainWindow):
         try:
             if getattr(self, "loader_thread", None) and self.loader_thread.isRunning():
                 self.loader_thread.wait(1500)
-        except Exception:
-            pass
-
-        try:
-            if getattr(self, "net_worker", None) and self.net_worker.isRunning():
-                self.net_worker.wait(1000)
         except Exception:
             pass
 
@@ -2636,52 +2648,89 @@ class AssameseTypingApp(QMainWindow):
 
 
 class SettingsDialog(QDialog):
-    """App settings: ASR pre-load preference."""
+    """App settings: performance and behavior preferences."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setFixedSize(500, 300)
+        self.setFixedSize(560, 400)
 
-        # Inherit the parent window's stylesheet for consistent theming
         if parent is not None:
             self.setStyleSheet(parent.styleSheet())
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+        layout.setContentsMargins(24, 24, 24, 24)
 
         title = QLabel("<b>Settings</b>")
-        title.setFont(QFont("Arial", 13, QFont.Weight.Bold))
+        title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         layout.addWidget(title)
 
-        layout.addWidget(QLabel(
-            "Choose how Sahaj uses your computer's resources at startup."
-        ))
+        intro = QLabel(
+            "Adjust how Sahaj uses your computer's resources. "
+            "Changes take effect the next time you open Sahaj."
+        )
+        intro.setWordWrap(True)
+        intro.setStyleSheet("color: gray; font-size: 9pt;")
+        layout.addWidget(intro)
+
+        layout.addSpacing(6)
+
+        # ------------------------------------------------------------
+        # 1) Voice AI pre-load
+        # ------------------------------------------------------------
+        s = QSettings("NazmulDev", "SahajApp")
 
         self.asr_checkbox = QCheckBox(
             "Load Voice AI engine at startup (uses ~500 MB of RAM)"
         )
-        current = QSettings("NazmulDev", "SahajApp").value(
-            "settings/preload_asr", True, type=bool
+        self.asr_checkbox.setChecked(
+            s.value("settings/preload_asr", True, type=bool)
         )
-        self.asr_checkbox.setChecked(current)
         layout.addWidget(self.asr_checkbox)
 
-        hint = QLabel(
-            "When ON: voice typing is instant (1–2 sec), but the app uses "
-            "~500 MB extra RAM.\n"
-            "When OFF: the app uses less RAM, but the first voice typing "
-            "of each session takes ~8–10 seconds.\n\n"
-            "Changes take effect the next time you open Sahaj."
+        asr_hint = QLabel(
+            "ON  → voice typing is instant (1–2 sec)\n"
+            "OFF → lower RAM, but first voice typing takes ~8–10 seconds"
         )
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: gray; font-size: 9pt;")
-        layout.addWidget(hint)
+        asr_hint.setWordWrap(True)
+        asr_hint.setStyleSheet("color: gray; font-size: 9pt; margin-left: 22px;")
+        layout.addWidget(asr_hint)
+
+        layout.addSpacing(10)
+
+        # ------------------------------------------------------------
+        # 2) Spell check
+        # ------------------------------------------------------------
+        self.spell_checkbox = QCheckBox(
+            "Enable Assamese spell check (uses ~50–100 MB of RAM)"
+        )
+        self.spell_checkbox.setChecked(
+            s.value("settings/spell_check", True, type=bool)
+        )
+        layout.addWidget(self.spell_checkbox)
+
+        spell_hint = QLabel(
+            "When ON, misspelled Assamese words get a red underline and "
+            "right-click suggestions.\n"
+            "Turn OFF if you don't write in Assamese, to save memory."
+        )
+        spell_hint.setWordWrap(True)
+        spell_hint.setStyleSheet("color: gray; font-size: 9pt; margin-left: 22px;")
+        layout.addWidget(spell_hint)
 
         layout.addStretch()
 
+        # ------------------------------------------------------------
+        # Buttons
+        # ------------------------------------------------------------
         btn_row = QHBoxLayout()
+
+        reset_btn = QPushButton("Reset to Defaults")
+        reset_btn.clicked.connect(self.reset_defaults)
+        btn_row.addWidget(reset_btn)
+
         btn_row.addStretch()
+
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
@@ -2690,11 +2739,17 @@ class SettingsDialog(QDialog):
         save_btn.setObjectName("primaryBtn")
         save_btn.clicked.connect(self.save_and_close)
         btn_row.addWidget(save_btn)
+
         layout.addLayout(btn_row)
+
+    def reset_defaults(self):
+        self.asr_checkbox.setChecked(True)
+        self.spell_checkbox.setChecked(True)
 
     def save_and_close(self):
         s = QSettings("NazmulDev", "SahajApp")
         s.setValue("settings/preload_asr", self.asr_checkbox.isChecked())
+        s.setValue("settings/spell_check", self.spell_checkbox.isChecked())
         s.sync()
         self.accept()
 
@@ -2898,7 +2953,7 @@ if __name__ == "__main__":
 
         if loading:
             try:
-                main_window.network_status_label.setText("⏳ Warming up AI...")
+                main_window.network_status_label.setText("⏳ Warming up AI Engines...")
                 main_window.network_status_label.setStyleSheet("color: #fd7e14;")
             except Exception:
                 pass
