@@ -43,20 +43,16 @@ def setup_default_models():
     if not getattr(sys, 'frozen', False):
         return  # only needed for bundled app
 
-    # Default location used by XlitEngine
     target_root = os.path.join(os.path.expanduser('~'), '.AI4Bharat_Xlit_Models', 'en2indic')
     target_v1_dir = os.path.join(target_root, 'v1.0')
 
-    # Path to bundled models inside _internal
     bundled_root = os.path.join(sys._MEIPASS, '_internal', 'ai4bharat', 'transliteration', 'transformer', 'models', 'en2indic')
     if not os.path.exists(bundled_root):
-        # fallback: try without _internal
         bundled_root = os.path.join(sys._MEIPASS, 'ai4bharat', 'transliteration', 'transformer', 'models', 'en2indic')
         if not os.path.exists(bundled_root):
             print("ERROR: Bundled models not found.")
             return
 
-    # Check if existing models are valid
     required_files = ['model.pt', 'vocab.txt', 'dict.txt']
     is_valid = True
     if os.path.exists(target_v1_dir):
@@ -65,7 +61,6 @@ def setup_default_models():
             if not os.path.exists(file_path) or os.path.getsize(file_path) < 1000:
                 is_valid = False
                 break
-        # also check lang_list.txt
         lang_file = os.path.join(target_root, 'lang_list.txt')
         if not os.path.exists(lang_file) or os.path.getsize(lang_file) < 100:
             is_valid = False
@@ -76,14 +71,11 @@ def setup_default_models():
         print("Models already present in default location.")
         return
 
-    # Remove old invalid folder
     if os.path.exists(target_v1_dir):
         shutil.rmtree(target_v1_dir)
 
-    # Copy v1.0 folder
     shutil.copytree(os.path.join(bundled_root, 'v1.0'), target_v1_dir, dirs_exist_ok=True)
 
-    # Copy lang_list.txt
     src_lang = os.path.join(bundled_root, 'lang_list.txt')
     if os.path.exists(src_lang):
         shutil.copy2(src_lang, target_root)
@@ -96,9 +88,6 @@ if getattr(sys, 'frozen', False):
     base_model_dir = os.path.join(sys._MEIPASS, '_internal', 'ai4bharat', 'transliteration', 'transformer', 'models', 'en2indic')
     if os.path.exists(base_model_dir):
         os.environ['AI4BHARAT_XLIT_MODEL_DIR'] = base_model_dir
-
-# --- Now copy models to default location (ensures engine finds them) ---
-setup_default_models()
 
 # --- AI4BHARAT XLIT ENGINE IMPORT ---
 try:
@@ -562,6 +551,7 @@ QMenu::separator {
 }
 """
 
+
 class DictionarySpellChecker:
     def __init__(self, dict_file="assamese_dictionary.txt"):
         self.words = set()
@@ -594,7 +584,6 @@ class DictionarySpellChecker:
         return len(self.words) > 0
 
 
-# --- UPDATED TRANSLATION WORKER (XLIT ENGINE + GOOGLE FALLBACK) ---
 class TranslationWorker(QThread):
     finished = pyqtSignal(list, str)
 
@@ -605,11 +594,9 @@ class TranslationWorker(QThread):
         self.mode = mode
 
     def run(self):
-        # Determine which engine to try first
         use_google_first = (self.mode == "google")
 
         if use_google_first:
-            # Try Google first (online)
             try:
                 url = f"https://inputtools.google.com/request?text={self.word}&itc=as-t-i0-und&num=10&cp=0&cs=1&ie=utf-8&oe=utf-8&app=demopage"
                 response = session.get(url, timeout=3)
@@ -619,9 +606,8 @@ class TranslationWorker(QThread):
                     self.finished.emit(suggestions, self.word)
                     return
             except Exception:
-                pass  # Google failed, fall through to offline
+                pass
 
-            # Fallback to AI4Bharat if Google fails
             if self.xlit_engine:
                 try:
                     res = self.xlit_engine.translit_word(self.word, topk=5)
@@ -639,7 +625,6 @@ class TranslationWorker(QThread):
                     print("XlitEngine execution error:", e)
 
         else:
-            # Offline mode: try AI4Bharat first
             if self.xlit_engine:
                 try:
                     res = self.xlit_engine.translit_word(self.word, topk=5)
@@ -656,7 +641,6 @@ class TranslationWorker(QThread):
                 except Exception as e:
                     print("XlitEngine execution error:", e)
 
-            # Fallback to Google (if offline engine fails)
             try:
                 url = f"https://inputtools.google.com/request?text={self.word}&itc=as-t-i0-und&num=10&cp=0&cs=1&ie=utf-8&oe=utf-8&app=demopage"
                 response = session.get(url, timeout=3)
@@ -668,7 +652,6 @@ class TranslationWorker(QThread):
             except Exception:
                 pass
 
-        # Final fallback: return the word itself
         self.finished.emit([self.word], self.word)
 
 
@@ -734,9 +717,6 @@ class EnglishToAssameseWorker(QThread):
 class MeaningPopup(QDialog):
     """
     Small floating card showing the English meaning of Assamese text.
-    * Matches app light/dark theme (theme is passed in explicitly).
-    * Red circular ✕ button (white cross, fades slightly on hover).
-    * Closes on ✕, Escape, or clicking anywhere outside the popup.
     """
 
     def __init__(self, meaning_text, parent=None, theme="dark"):
@@ -755,7 +735,6 @@ class MeaningPopup(QDialog):
         layout.setContentsMargins(14, 10, 14, 12)
         layout.setSpacing(8)
 
-        # ---------- Header row: title (left) + ✕ (right) ----------
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
         header_row.setSpacing(6)
@@ -780,7 +759,6 @@ class MeaningPopup(QDialog):
 
         layout.addLayout(header_row)
 
-        # ---------- Meaning text ----------
         self.text_label = QLabel(self.meaning_text if self.meaning_text else "No translation found")
         self.text_label.setWordWrap(True)
         self.text_label.setTextInteractionFlags(
@@ -792,24 +770,20 @@ class MeaningPopup(QDialog):
         self.text_label.setFont(body_font)
         layout.addWidget(self.text_label)
 
-        # ---------- Copy button ----------
         self.copy_btn = QPushButton("📋 Copy meaning")
         self.copy_btn.setObjectName("meaningCopy")
         self.copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.copy_btn.clicked.connect(self._on_copy_clicked)
         layout.addWidget(self.copy_btn)
 
-        # ---------- Apply theme ----------
         self._apply_theme()
 
-        # ---------- Install click-outside watcher ----------
         app = QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
 
         self.adjustSize()
 
-    # ---------------------------------------------------------
     def _apply_theme(self):
         if self._theme == "dark":
             self.setStyleSheet("""
@@ -886,26 +860,18 @@ class MeaningPopup(QDialog):
                 QPushButton#meaningCopy:pressed { background-color: #0A58CA; }
             """)
 
-    # ---------------------------------------------------------
     def _on_copy_clicked(self):
         QApplication.clipboard().setText(self.meaning_text or "")
         self.copy_btn.setText("✅ Copied!")
         QTimer.singleShot(800, self.close)
 
-    # ---------------------------------------------------------
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
             self.close()
             return
         super().keyPressEvent(event)
 
-    # ---------------------------------------------------------
     def eventFilter(self, obj, event):
-        """
-        Watches ALL app events. If the user presses the mouse outside
-        this popup's rectangle, we close it. This gives us reliable
-        'click anywhere else to dismiss' behavior.
-        """
         if event.type() == QEvent.Type.MouseButtonPress and self.isVisible():
             try:
                 global_pos = event.globalPosition().toPoint()
@@ -915,9 +881,7 @@ class MeaningPopup(QDialog):
                 pass
         return super().eventFilter(obj, event)
 
-    # ---------------------------------------------------------
     def closeEvent(self, event):
-        # Always remove the app-wide filter so we don't linger.
         app = QApplication.instance()
         if app is not None:
             try:
@@ -926,9 +890,7 @@ class MeaningPopup(QDialog):
                 pass
         super().closeEvent(event)
 
-    # ---------------------------------------------------------
     def show_at(self, global_pos):
-        """Position the popup near a global point, keeping it on screen."""
         screen = QApplication.primaryScreen().availableGeometry()
         w = self.width()
         h = self.height()
@@ -947,6 +909,7 @@ class MeaningPopup(QDialog):
         self.raise_()
         self.activateWindow()
         self.setFocus()
+
 
 class PhoneticTextEdit(QPlainTextEdit):
     def __init__(self, parent=None):
@@ -1111,7 +1074,6 @@ class PhoneticTextEdit(QPlainTextEdit):
     def fetch_translation(self, word):
         main_win = self.window()
         xlit_engine = getattr(main_win, 'xlit_engine', None)
-        # Get the current translation mode from the main window
         mode = getattr(main_win, 'translation_mode', 'google')
         self.translator = TranslationWorker(word, xlit_engine=xlit_engine, mode=mode)
         self.translator.finished.connect(self.handle_translation)
@@ -1184,7 +1146,6 @@ class PhoneticTextEdit(QPlainTextEdit):
         main_win = self.window()
         is_main_app = isinstance(main_win, AssameseTypingApp)
 
-        # -------- What text should we look up? --------
         cursor = self.textCursor()
         if cursor.hasSelection():
             lookup_text = cursor.selectedText().replace("\u2029", " ").strip()
@@ -1195,7 +1156,6 @@ class PhoneticTextEdit(QPlainTextEdit):
 
         has_assamese = bool(re.search(r'[\u0980-\u09FF]', lookup_text))
 
-        # -------- Misspelled word under cursor (only when nothing is selected) --------
         misspelled_word = None
         misspelled_range = None
         misspelled_suggestions = None
@@ -1217,14 +1177,9 @@ class PhoneticTextEdit(QPlainTextEdit):
                         misspelled_suggestions = suggestions
                         break
 
-        # -------- Build the menu --------
         menu = QMenu(self)
         menu_font = QFont()
         menu_font.setFamilies(CUSTOM_FONT_FAMILIES)
-        # When spell-check suggestions are going to appear, use a larger
-        # font (editor size − 3) so the suggestions are easy to read —
-        # this matches the earlier behaviour you liked.
-        # For a normal right-click, keep a compact, professional size.
         if misspelled_word and misspelled_range:
             editor_size = self.font().pointSize()
             menu_font.setPointSize(max(10, editor_size - 3))
@@ -1232,7 +1187,6 @@ class PhoneticTextEdit(QPlainTextEdit):
             menu_font.setPointSize(10)
         menu.setFont(menu_font)
 
-        # ---- 1) Show meaning (always the FIRST item) ----
         if has_assamese and len(lookup_text) >= 1:
             meaning_action = menu.addAction("📖 Show meaning")
             meaning_action.triggered.connect(
@@ -1241,11 +1195,7 @@ class PhoneticTextEdit(QPlainTextEdit):
             )
             menu.addSeparator()
 
-        # ---- 2) Spell-check section ----
         if misspelled_word and misspelled_range:
-            # NOTE: We deliberately do NOT select the misspelled word
-            # here. The selection is applied only when the user actually
-            # clicks a suggestion — same behaviour as MS Word.
             all_suggestions = list(misspelled_suggestions) if misspelled_suggestions else []
             user_matches = difflib.get_close_matches(
                 misspelled_word,
@@ -1281,7 +1231,6 @@ class PhoneticTextEdit(QPlainTextEdit):
             )
             menu.addSeparator()
 
-        # ---- 3) Standard Cut / Copy / Paste / Select All etc. ----
         if not (misspelled_word and misspelled_range):
             std_menu = self.createStandardContextMenu()
             for act in std_menu.actions():
@@ -1296,7 +1245,6 @@ class PhoneticTextEdit(QPlainTextEdit):
         self.setTextCursor(cursor)
 
     def _replace_word_in_range(self, rng, replacement):
-        """Replace the given (start, end) character range with `replacement`."""
         cursor = QTextCursor(self.document())
         cursor.setPosition(rng[0])
         cursor.setPosition(rng[1], QTextCursor.MoveMode.KeepAnchor)
@@ -1304,9 +1252,6 @@ class PhoneticTextEdit(QPlainTextEdit):
         self.setTextCursor(cursor)
 
     def _show_meaning_popup(self, text, global_pos):
-        """Fetch meaning via MeaningWorker and show it in a floating card."""
-
-        # Close any previously-open popup
         if getattr(self, "_meaning_popup", None) is not None:
             try:
                 self._meaning_popup.close()
@@ -1315,7 +1260,6 @@ class PhoneticTextEdit(QPlainTextEdit):
                 pass
             self._meaning_popup = None
 
-        # Show "Loading…" immediately so the user sees a response
         loading = MeaningPopup("Loading…", parent=self.window(), theme=self._current_theme_name())
         loading.show_at(global_pos)
         self._meaning_popup = loading
@@ -1323,7 +1267,6 @@ class PhoneticTextEdit(QPlainTextEdit):
         worker = MeaningWorker(text)
 
         def _on_done(_word, meaning, popup_ref=loading, pos=global_pos):
-            # Ignore stale results from an earlier lookup
             if getattr(self, "_meaning_popup", None) is not popup_ref:
                 return
             try:
@@ -1338,7 +1281,6 @@ class PhoneticTextEdit(QPlainTextEdit):
 
         worker.meaning_fetched.connect(_on_done)
 
-        # Keep a reference so the thread isn't garbage-collected mid-flight
         if not hasattr(self, "_meaning_workers"):
             self._meaning_workers = []
         self._meaning_workers.append(worker)
@@ -1352,7 +1294,6 @@ class PhoneticTextEdit(QPlainTextEdit):
         worker.start()
 
     def _current_theme_name(self):
-        """Return 'dark' or 'light' based on the main window's current theme."""
         w = self.window()
         while w is not None:
             if hasattr(w, "current_theme"):
@@ -1423,10 +1364,9 @@ class DraggableButton(QPushButton):
         event.acceptProposedAction()
 
 
-# --- ASYNCHRONOUS BACKEND LOADER WITH XLIT ENGINE ---
 class AppLoaderThread(QThread):
     finished_loading = pyqtSignal(object, dict, object)
-    error_signal = pyqtSignal(str)   # <--- New signal for errors
+    error_signal = pyqtSignal(str)
 
     def __init__(self, dictionary_file, dict_path):
         super().__init__()
@@ -1450,14 +1390,13 @@ class AppLoaderThread(QThread):
             except Exception:
                 dictionary = {}
 
-        xlit_engine = None  # <-- Moved outside the if block
+        xlit_engine = None
 
         if HAS_XLIT:
             try:
                 with suppress_stdout():
                     xlit_engine = XlitEngine("as", beam_width=4, rescore=False)
 
-                # Quick test
                 test = xlit_engine.translit_word("test", topk=1)
                 if test:
                     print("XlitEngine initialized successfully.")
@@ -1477,16 +1416,6 @@ class AppLoaderThread(QThread):
 
         self.finished_loading.emit(spell_tool, dictionary, xlit_engine)
 
-class NetworkProbeThread(QThread):
-    """One-shot internet reachability probe, run in the background."""
-    result = pyqtSignal(bool)
-
-    def run(self):
-        try:
-            requests.head("https://www.google.com", timeout=3, allow_redirects=True)
-            self.result.emit(True)
-        except Exception:
-            self.result.emit(False)
 
 class ASRLoaderThread(QThread):
     """Loads the ASR model once at startup so voice typing is instant."""
@@ -1503,11 +1432,32 @@ class ASRLoaderThread(QThread):
             print(f"ASR pre-load failed: {e}")
             self.finished_loading.emit(None)
 
-class ModernComboBox(QComboBox):
-    """
-    A QComboBox with a fully-styleable, bezel-free popup.
-    """
 
+class NetworkProbeThread(QThread):
+    """One-shot internet reachability probe, run in the background."""
+    result = pyqtSignal(bool)
+
+    def run(self):
+        try:
+            requests.head("https://www.google.com", timeout=3, allow_redirects=True)
+            self.result.emit(True)
+        except Exception:
+            self.result.emit(False)
+
+
+class SetupThread(QThread):
+    """Runs setup_default_models() in the background so the splash can appear instantly."""
+    done = pyqtSignal()
+
+    def run(self):
+        try:
+            setup_default_models()
+        except Exception as e:
+            print(f"setup_default_models failed: {e}")
+        self.done.emit()
+
+
+class ModernComboBox(QComboBox):
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -1522,7 +1472,6 @@ class ModernComboBox(QComboBox):
         view.setFont(popup_font)
 
     def _get_theme(self):
-        """Walk up the parent chain to find the app's current_theme."""
         w = self.window()
         while w is not None:
             if hasattr(w, "current_theme"):
@@ -1543,7 +1492,6 @@ class ModernComboBox(QComboBox):
         else:
             bg = "#FFFFFF"
 
-        # Remove the native frame/shadow that paints the dark bezel
         try:
             from PyQt6.QtWidgets import QFrame
             if isinstance(container, QFrame):
@@ -1552,7 +1500,6 @@ class ModernComboBox(QComboBox):
         except Exception:
             pass
 
-        # Paint the container with the theme colour so no gray shows through
         container.setStyleSheet(f"""
             QFrame {{
                 border: 0px;
@@ -1562,6 +1509,7 @@ class ModernComboBox(QComboBox):
             }}
         """)
         container.setContentsMargins(0, 0, 0, 0)
+
 
 class AssameseTypingApp(QMainWindow):
     def __init__(self):
@@ -1590,74 +1538,74 @@ class AssameseTypingApp(QMainWindow):
         self.recording_active = False
         self.recording_worker = None
         self.voice_progress = None
+        self.asr_transcriber = None
+        self.asr_loader_thread = None
+        self.net_probe = None
+        # Keep strong references to running QThreads to prevent GC crashes
+        self._running_workers = []
+
         self.loader_thread = AppLoaderThread(self.dictionary_file, resource_path("assamese_dictionary.txt"))
         self.loader_thread.finished_loading.connect(self.on_backend_loaded)
         self.loader_thread.error_signal.connect(self.show_engine_error)
         self.loader_thread.start()
-        # ASR loader will be started AFTER the main loader finishes,
-        # to avoid two heavy model loads fighting for resources.
-        self.asr_transcriber = None
-        self.asr_loader_thread = None
-        # Keep strong references to running QThreads so Python's GC
-        # doesn't destroy them mid-signal (a classic PyQt crash source).
-        self._running_workers = []
+
         self.init_ui()
         self.load_autosave()
         self.load_helper_buttons()
         self.autosave_timer = QTimer()
         self.autosave_timer.timeout.connect(self.save_text)
         self.autosave_timer.start(6000)
-        # Use the OS's native network information (no polling, zero traffic)
+
         if QNetworkInformation.load(QNetworkInformation.Feature.Reachability):
             net_info = QNetworkInformation.instance()
             net_info.reachabilityChanged.connect(self.on_reachability_changed)
-            # The OS-reported value is unreliable on startup (Windows
-            # often returns 'Unknown'), so we defer to a real probe.
         else:
             print("Warning: QNetworkInformation is not supported on this platform.")
+
         # Definitive check: actual HTTP probe in the background.
         self.net_probe = NetworkProbeThread()
         self.net_probe.result.connect(self.update_network_status)
         self.net_probe.start()
+
         self.spell_timer = QTimer()
         self.spell_timer.setSingleShot(True)
         self.spell_timer.timeout.connect(lambda: self.check_spelling())
         self.text_area.textChanged.connect(lambda: self.spell_timer.start(5000))
         self.check_spelling()
 
-        # Autosave debounce timer (save 1 second after typing stops)
         self.autosave_debounce = QTimer()
         self.autosave_debounce.setSingleShot(True)
         self.autosave_debounce.timeout.connect(self.save_text)
         self.text_area.textChanged.connect(lambda: self.autosave_debounce.start(2000))
 
-        # Countdown timer for voice recording
         self.remaining_seconds = 24
         self.countdown_timer = QTimer()
         self.countdown_timer.timeout.connect(self.update_countdown)
-        self.countdown_timer.setInterval(1000)  # 1 second
-        
+        self.countdown_timer.setInterval(1000)
+
+    def _track_worker(self, worker):
+        self._running_workers.append(worker)
+        worker.finished.connect(lambda w=worker: self._untrack_worker(w))
+
+    def _untrack_worker(self, worker):
+        try:
+            self._running_workers.remove(worker)
+        except ValueError:
+            pass
+
     def on_engine_mode_changed(self, index):
-        """Handle dropdown selection: engine switch OR typing-mode switch."""
         if index in (0, 1):
-            # Translation engine modes
             self.translation_mode = "google" if index == 0 else "offline"
             if HAS_TYPING_MODES and getattr(self, "typing_manager", None):
                 self.typing_manager.set_mode("none")
         elif index == 2:
-            # Mouse typing
             if HAS_TYPING_MODES and getattr(self, "typing_manager", None):
                 self.typing_manager.set_mode("mouse")
         elif index == 3:
-            # InScript typing
             if HAS_TYPING_MODES and getattr(self, "typing_manager", None):
                 self.typing_manager.set_mode("inscript")
 
     def on_typing_mode_closed(self):
-        """Mouse Typing panel was closed by the user.
-        Reset the dropdown to Live AI (online) or Built-In AI (offline)
-        WITHOUT re-triggering on_engine_mode_changed.
-        """
         target_index = 0 if self.is_online else 1
         self.engine_combo.blockSignals(True)
         self.engine_combo.setCurrentIndex(target_index)
@@ -1672,13 +1620,13 @@ class AssameseTypingApp(QMainWindow):
                 self.remaining_seconds = 24
                 self.voice_progress.setValue(100)
                 self.voice_progress.show()
-                self.voice_timer_label.setText("24s")   # reset timer text
+                self.voice_timer_label.setText("24s")
                 self.voice_timer_label.show()
                 self.recording_worker = voice_typing.VoiceRecorderWorker(max_duration=24)
                 self.recording_worker.recording_started.connect(self.on_recording_started)
                 self.recording_worker.recording_stopped.connect(self.on_recording_stopped)
                 self.recording_worker.error.connect(self.on_voice_error)
-                self.recording_worker.level_update.connect(self.update_voice_level)  # <-- new
+                self.recording_worker.level_update.connect(self.update_voice_level)
                 self.recording_worker.start()
                 self.countdown_timer.start()
 
@@ -1688,7 +1636,6 @@ class AssameseTypingApp(QMainWindow):
                 print(error_msg)
                 self.on_voice_error(error_msg)
         else:
-            # Stop recording
             if self.recording_worker:
                 self.recording_worker.stop()
                 self.voice_btn.setEnabled(False)
@@ -1696,12 +1643,10 @@ class AssameseTypingApp(QMainWindow):
                 self.countdown_timer.stop()
 
     def on_recording_started(self):
-        """Called when recording actually starts."""
         self.voice_btn.setEnabled(True)
         self.voice_btn.setText("⏹️ Stop")
 
     def on_recording_stopped(self, audio_filepath):
-        """Called when recording stops (either by user or timer)."""
         self.countdown_timer.stop()
         self.voice_timer_label.hide()
         self.voice_progress.setValue(100)
@@ -1709,9 +1654,6 @@ class AssameseTypingApp(QMainWindow):
         self.voice_btn.setEnabled(False)
         self.voice_btn.setText("⏳ Transcribing...")
 
-        # Let the old recorder object be retired by Qt's own lifecycle
-        # rather than setting it to None here — avoids a race where
-        # Python GC drops the QThread while it's still emitting signals.
         old_recorder = self.recording_worker
         self.recording_worker = None
         if old_recorder is not None:
@@ -1728,7 +1670,6 @@ class AssameseTypingApp(QMainWindow):
         worker.start()
 
     def on_voice_transcribed(self, text):
-        """Handle successful transcription."""
         self.voice_progress.hide()
         self.voice_progress.setValue(100)
         if text and text.strip():
@@ -1742,7 +1683,6 @@ class AssameseTypingApp(QMainWindow):
         self.transcriber_thread = None
 
     def on_voice_error(self, error_message):
-        """Handle transcription errors."""
         self.countdown_timer.stop()
         self.voice_timer_label.hide()
         self.voice_progress.hide()
@@ -1750,29 +1690,28 @@ class AssameseTypingApp(QMainWindow):
         QMessageBox.critical(self, "Voice Typing Error", error_message)
         self.voice_btn.setEnabled(True)
         self.voice_btn.setText("🎤 Voice Typing")
+        self.recording_worker = None
         self.transcriber_thread = None
 
     def update_countdown(self):
         self.remaining_seconds -= 1
-        self.voice_timer_label.setText(f"{self.remaining_seconds}s")   # update label
+        self.voice_timer_label.setText(f"{self.remaining_seconds}s")
         if self.remaining_seconds <= 0:
             self.countdown_timer.stop()
-            self.voice_timer_label.hide()         # hide the label
-            self.voice_progress.hide()            # hide the VU meter
+            self.voice_timer_label.hide()
+            self.voice_progress.hide()
             if self.recording_worker:
                 self.recording_worker.stop()
                 self.voice_btn.setEnabled(False)
                 self.voice_btn.setText("⏹️ Stopping...")
 
     def update_voice_level(self, rms):
-        """Update progress bar to show audio level."""
         if self.voice_progress.isVisible():
-            # Scale to 0-100 (we want it to bounce like a VU meter)
             value = int(rms * 100)
             self.voice_progress.setValue(value)
         else:
             self.voice_progress.show()
-            self.voice_progress.setValue(0)    
+            self.voice_progress.setValue(0)
 
     def on_backend_loaded(self, spell_tool, dictionary, xlit_engine):
         self.spell_tool = spell_tool
@@ -1787,13 +1726,33 @@ class AssameseTypingApp(QMainWindow):
                                 "Built-In AI mode will not work.")
         self.check_spelling()
 
-        # NOW start the ASR loader — sequential, not concurrent.
-        self.asr_loader_thread = ASRLoaderThread()
-        self.asr_loader_thread.finished_loading.connect(self.on_asr_loaded)
-        self.asr_loader_thread.start()
+        # --- Start the ASR loader only if the user wants it ---
+        preload = QSettings("NazmulDev", "SahajApp").value(
+            "settings/preload_asr", True, type=bool
+        )
+        if preload and voice_typing is not None:
+            self.asr_loader_thread = ASRLoaderThread()
+            self.asr_loader_thread.finished_loading.connect(self.on_asr_loaded)
+            self.asr_loader_thread.start()
+            try:
+                self.voice_btn.setEnabled(False)
+                self.voice_btn.setText("🎤 Voice Typing (loading…)")
+                self.voice_btn.setToolTip("Voice typing is warming up. This takes a few seconds at startup.")
+            except Exception:
+                pass
+        else:
+            print("ASR pre-load disabled by user setting.")
+            self.asr_transcriber = None
+            try:
+                self.voice_btn.setEnabled(True)
+                self.voice_btn.setText("🎤 Voice Typing")
+                self.voice_btn.setToolTip(
+                    "Voice typing will load the AI on first use (~8–10 seconds)."
+                )
+            except Exception:
+                pass
 
     def on_asr_loaded(self, transcriber):
-        """Called when the ASR model has finished pre-loading (or failed)."""
         self.asr_transcriber = transcriber
         if transcriber is not None:
             print("ASR model ready. Voice typing will be fast.")
@@ -1811,6 +1770,14 @@ class AssameseTypingApp(QMainWindow):
                 self.voice_btn.setToolTip("ASR model failed to pre-load; it will load on first use.")
             except Exception:
                 pass
+        # Restore network status label from any "Warming up..." message
+        try:
+            if QNetworkInformation.instance() is not None:
+                self.on_reachability_changed(
+                    QNetworkInformation.instance().reachability()
+                )
+        except Exception:
+            pass
 
     def show_engine_error(self, message):
         # Defer the popup so it appears after the splash closes.
@@ -1826,6 +1793,27 @@ class AssameseTypingApp(QMainWindow):
 
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Settings gear icon (top-left)
+        self.settings_btn = QPushButton("⚙️")
+        self.settings_btn.setFixedSize(44, 44)
+        self.settings_btn.setFont(QFont("Segoe UI Emoji", 18))
+        self.settings_btn.setToolTip("Settings")
+        self.settings_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                padding: 0px;
+                text-align: center;
+            }
+            QPushButton:hover {
+                background-color: rgba(128, 128, 128, 0.2);
+                border-radius: 22px;
+            }
+        """)
+        self.settings_btn.clicked.connect(self.open_settings_dialog)
+        header_layout.addWidget(self.settings_btn)
+
         header_layout.addStretch(1)
 
         self.header_logo = QLabel()
@@ -1923,8 +1911,7 @@ class AssameseTypingApp(QMainWindow):
             }
         """)
         self.phonetic_btn.toggled.connect(self.toggle_phonetic)
-        
-        # --- Mode dropdown: Live AI / Built-In AI / Mouse Typing / InScript Typing ---
+
         self.engine_combo = ModernComboBox()
         self.engine_combo.setToolTip(
             "Choose the translation engine or a typing mode.\n"
@@ -1937,7 +1924,6 @@ class AssameseTypingApp(QMainWindow):
             ["Live AI", "Built-In AI", "Mouse Typing", "Inscript Typing"]
         )
         if not HAS_TYPING_MODES:
-            # Grey out the typing-mode entries if the module couldn't load
             model = self.engine_combo.model()
             for i in (2, 3):
                 item = model.item(i)
@@ -1948,7 +1934,7 @@ class AssameseTypingApp(QMainWindow):
 
         self.voice_btn = QPushButton("🎤 Voice Typing (loading…)")
         self.voice_btn.setToolTip("Voice typing is warming up. This takes a few seconds at startup.")
-        self.voice_btn.setEnabled(False)  # re-enabled when ASR is ready
+        self.voice_btn.setEnabled(False)
         self.voice_btn.setStyleSheet("""
             QPushButton {
                 background-color: #6F42C1;
@@ -1964,10 +1950,13 @@ class AssameseTypingApp(QMainWindow):
             QPushButton:pressed {
                 background-color: #4A2B8A;
             }
+            QPushButton:disabled {
+                background-color: #4A4A4A;
+                color: #A0A0A0;
+            }
         """)
         self.voice_btn.clicked.connect(self.start_voice_typing)
 
-        # Progress bar for voice recording countdown
         self.voice_progress = QProgressBar()
         self.voice_progress.setRange(0, 100)
         self.voice_progress.setValue(100)
@@ -1975,22 +1964,21 @@ class AssameseTypingApp(QMainWindow):
         self.voice_progress.setFixedHeight(6)
         self.voice_progress.setStyleSheet("""
             QProgressBar {
-                background-color: #D3D3D3;   /* Light Gray */
+                background-color: #D3D3D3;
                 border: none;
                 border-radius: 3px;
             }
             QProgressBar::chunk {
-                background-color: #008080;   /* Deep Teal */
+                background-color: #008080;
                 border-radius: 3px;
             }
         """)
         self.voice_progress.hide()
-        # Timer label for voice recording
         self.voice_timer_label = QLabel("24s")
-        self.voice_timer_label.setFixedWidth(35)          # enough space for "24s"
+        self.voice_timer_label.setFixedWidth(35)
         self.voice_timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.voice_timer_label.setStyleSheet("color: #fb6300; font-weight: bold; font-size: 13px;")
-        self.voice_timer_label.hide()                     # hidden by default
+        self.voice_timer_label.hide()
         undo_btn = QPushButton("Undo")
         redo_btn = QPushButton("Redo")
         redo_btn.setToolTip("Redo last undone change (Ctrl+Y)")
@@ -2087,7 +2075,6 @@ class AssameseTypingApp(QMainWindow):
         self.text_area.update_suggestion_font()
         layout.addWidget(self.text_area)
 
-        # --- Wire up typing-mode manager (InScript + Mouse Typing) ---
         if HAS_TYPING_MODES:
             self.typing_manager = typing_modes.TypingModeManager(
                 self, self.text_area, theme=self.current_theme
@@ -2103,8 +2090,7 @@ class AssameseTypingApp(QMainWindow):
             "<a href='https://www.facebook.com/nazmul.hussain.319' style='color: #0D6EFD; text-decoration: none;'>App designed & developed by Nazmul Hussain</a>")
         dev_label.setOpenExternalLinks(True)
         dev_label.setFont(QFont("Arial", 10))
-        
-        # License status label
+
         self.license_label = QLabel()
         self.license_label.setFont(QFont("Arial", 10, QFont.Weight.Bold))
         self.update_license_label()
@@ -2152,6 +2138,10 @@ class AssameseTypingApp(QMainWindow):
         footer_layout.addWidget(support_btn)
         layout.addLayout(footer_layout)
 
+    def open_settings_dialog(self):
+        dlg = SettingsDialog(self)
+        dlg.exec()
+
     def toggle_theme(self, checked):
         font_css = font_family_css(CUSTOM_FONT_FAMILIES)
         if checked:
@@ -2167,61 +2157,45 @@ class AssameseTypingApp(QMainWindow):
             self.typing_manager.set_theme(self.current_theme)
 
     def update_license_label(self):
-        """Update the footer label showing license status."""
         email = sahaj_license.get_licensed_email()
         if email:
             self.license_label.setText(f"✅ Licensed to: {email}")
-            self.license_label.setStyleSheet("color: #198754;")  # green
+            self.license_label.setStyleSheet("color: #198754;")
         else:
             self.license_label.setText("⚠️ Unregistered")
-            self.license_label.setStyleSheet("color: #DC3545;")  # red
-
-    def _track_worker(self, worker):
-        """Keep a strong reference to a running QThread."""
-        self._running_workers.append(worker)
-        worker.finished.connect(lambda w=worker: self._untrack_worker(w))
-
-    def _untrack_worker(self, worker):
-        try:
-            self._running_workers.remove(worker)
-        except ValueError:
-            pass
+            self.license_label.setStyleSheet("color: #DC3545;")
 
     def closeEvent(self, event):
-        # 1. Flush the editor to disk one last time
         try:
             self.save_text()
         except Exception:
             pass
 
-        # 2. Stop the loader thread if it's still spinning up the AI model
         try:
             if getattr(self, "loader_thread", None) and self.loader_thread.isRunning():
                 self.loader_thread.wait(1500)
         except Exception:
             pass
 
-        # 3. Stop the network thread so it doesn't try to touch a dead window
         try:
             if getattr(self, "net_worker", None) and self.net_worker.isRunning():
                 self.net_worker.wait(1000)
         except Exception:
             pass
 
-        # 4. Tear down the typing-mode manager (removes the event filter)
         try:
             if getattr(self, "typing_manager", None):
                 self.typing_manager.shutdown()
         except Exception:
             pass
 
-        # 5. Stop the ASR loader thread if it's still running
         try:
             if getattr(self, "asr_loader_thread", None) and self.asr_loader_thread.isRunning():
                 self.asr_loader_thread.wait(2000)
         except Exception:
             pass
-        # 6. Wait for any running worker threads so we don't crash on exit
+
+        # Wait for any running worker threads so we don't crash on exit
         try:
             for w in list(getattr(self, "_running_workers", [])):
                 try:
@@ -2231,6 +2205,7 @@ class AssameseTypingApp(QMainWindow):
                     pass
         except Exception:
             pass
+
         super().closeEvent(event)
 
     def redo_edit(self):
@@ -2247,10 +2222,8 @@ class AssameseTypingApp(QMainWindow):
 
     def on_reachability_changed(self, reachability):
         """
-        Called by the OS when network reachability changes.
-        IMPORTANT: only explicit 'Online' counts as online. 'Unknown' is
-        treated as offline because Windows often reports it when there is
-        no internet — treating it as online would show a false 'Online'.
+        Only explicit 'Online' counts as online. 'Unknown' is treated as
+        offline because Windows often reports it when there is no internet.
         """
         is_online = (reachability == QNetworkInformation.Reachability.Online)
         self.update_network_status(is_online)
@@ -2453,7 +2426,6 @@ class AssameseTypingApp(QMainWindow):
         self.text_area.setFocus()
 
     def save_text(self):
-        """Save editor text atomically with fsync for power-failure safety."""
         text = self.text_area.toPlainText()
         try:
             temp_file = self.autosave_file + ".tmp"
@@ -2511,7 +2483,6 @@ class AssameseTypingApp(QMainWindow):
             except Exception:
                 continue
 
-        # If nothing works, start empty
         self.text_area.setPlainText("")
 
     def copy_to_clipboard(self):
@@ -2663,6 +2634,71 @@ class AssameseTypingApp(QMainWindow):
 
         dialog.exec()
 
+
+class SettingsDialog(QDialog):
+    """App settings: ASR pre-load preference."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setFixedSize(500, 300)
+
+        # Inherit the parent window's stylesheet for consistent theming
+        if parent is not None:
+            self.setStyleSheet(parent.styleSheet())
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        title = QLabel("<b>Settings</b>")
+        title.setFont(QFont("Arial", 13, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        layout.addWidget(QLabel(
+            "Choose how Sahaj uses your computer's resources at startup."
+        ))
+
+        self.asr_checkbox = QCheckBox(
+            "Load Voice AI engine at startup (uses ~500 MB of RAM)"
+        )
+        current = QSettings("NazmulDev", "SahajApp").value(
+            "settings/preload_asr", True, type=bool
+        )
+        self.asr_checkbox.setChecked(current)
+        layout.addWidget(self.asr_checkbox)
+
+        hint = QLabel(
+            "When ON: voice typing is instant (1–2 sec), but the app uses "
+            "~500 MB extra RAM.\n"
+            "When OFF: the app uses less RAM, but the first voice typing "
+            "of each session takes ~8–10 seconds.\n\n"
+            "Changes take effect the next time you open Sahaj."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: gray; font-size: 9pt;")
+        layout.addWidget(hint)
+
+        layout.addStretch()
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        save_btn = QPushButton("Save")
+        save_btn.setObjectName("primaryBtn")
+        save_btn.clicked.connect(self.save_and_close)
+        btn_row.addWidget(save_btn)
+        layout.addLayout(btn_row)
+
+    def save_and_close(self):
+        s = QSettings("NazmulDev", "SahajApp")
+        s.setValue("settings/preload_asr", self.asr_checkbox.isChecked())
+        s.sync()
+        self.accept()
+
+
 class ActivationDialog(QDialog):
     """Modal dialog shown when the app is not yet licensed."""
     def __init__(self, parent=None):
@@ -2736,13 +2772,13 @@ def ensure_licensed():
     if sahaj_license.is_licensed():
         return True
     dialog = ActivationDialog()
-    # Ensure the dialog is on top of everything (including any splash)
     dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
     dialog.raise_()
     dialog.activateWindow()
     if dialog.exec() == QDialog.DialogCode.Accepted:
         return True
     return False
+
 
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
@@ -2761,91 +2797,116 @@ if __name__ == "__main__":
     clipboard.clear()
 
     app_icon_path = resource_path("header_icon.png")
+    if not os.path.exists(app_icon_path):
+        # Without an icon we can't proceed with the current structure,
+        # but we still want the app to launch. Fall back to a minimal startup.
+        pass
+
     if os.path.exists(app_icon_path):
         app.setWindowIcon(QIcon(app_icon_path))
 
-        # --- LICENSE CHECK (before splash) ---
-        if not ensure_licensed():
-            sys.exit(0)
+    # --- LICENSE CHECK (before splash) ---
+    if not ensure_licensed():
+        sys.exit(0)
 
-        available_families = []
+    # --- Defer model copying into a background thread ---
+    # This is what made the splash appear late on first launch.
+    # We run it in the background so the splash can appear immediately.
+    setup_thread = SetupThread()
 
-        font_path1 = resource_path("Nirmala.ttf")
-        font_id1 = QFontDatabase.addApplicationFont(font_path1)
-        if font_id1 != -1:
-            family1 = QFontDatabase.applicationFontFamilies(font_id1)[0]
-            available_families.append(family1)
+    # --- Load fonts (fast, main thread) ---
+    available_families = []
 
-        font_path2 = resource_path("Banikanta.ttf")
-        font_id2 = QFontDatabase.addApplicationFont(font_path2)
-        if font_id2 != -1:
-            family2 = QFontDatabase.applicationFontFamilies(font_id2)[0]
-            if family2 not in available_families:
-                available_families.append(family2)
+    font_path1 = resource_path("Nirmala.ttf")
+    font_id1 = QFontDatabase.addApplicationFont(font_path1)
+    if font_id1 != -1:
+        family1 = QFontDatabase.applicationFontFamilies(font_id1)[0]
+        available_families.append(family1)
 
-        if not available_families:
-            available_families = ["Nirmala UI", "Segoe UI", "Arial"]
-        else:
-            available_families.extend(["Nirmala UI", "Segoe UI", "Arial"])
+    font_path2 = resource_path("Banikanta.ttf")
+    font_id2 = QFontDatabase.addApplicationFont(font_path2)
+    if font_id2 != -1:
+        family2 = QFontDatabase.applicationFontFamilies(font_id2)[0]
+        if family2 not in available_families:
+            available_families.append(family2)
 
-        seen = set()
-        available_families = [f for f in available_families if not (f in seen or seen.add(f))]
-        CUSTOM_FONT_FAMILIES = available_families
+    if not available_families:
+        available_families = ["Nirmala UI", "Segoe UI", "Arial"]
+    else:
+        available_families.extend(["Nirmala UI", "Segoe UI", "Arial"])
 
-        splash_gif_path = resource_path("splash_animation.gif")
+    seen = set()
+    available_families = [f for f in available_families if not (f in seen or seen.add(f))]
+    CUSTOM_FONT_FAMILIES = available_families
 
-        if os.path.exists(splash_gif_path):
-            splash = QLabel()
-            splash.setWindowFlags(Qt.WindowType.SplashScreen |
-                                  Qt.WindowType.WindowStaysOnTopHint |
-                                  Qt.WindowType.FramelessWindowHint)
-            splash.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-            movie = QMovie(splash_gif_path)
-            splash.setMovie(movie)
-            movie.start()
-        else:
-            splash_label = QLabel()
-            splash_label.setFixedSize(450, 250)
-            splash_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            splash_label.setStyleSheet("""
-                QLabel {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2C3E50, stop:1 #3498DB);
-                    color: white;
-                    font-family: "Segoe UI";
-                    font-size: 26px;
-                    font-weight: bold;
-                    border-radius: 12px;
-                    padding: 20px;
-                }
-            """)
-            splash_label.setText("সহজ-Sahaj-v3.0\n\nLoading, please wait...\n\nDeveloped by Nazmul Hussain")
-            splash_pixmap = splash_label.grab()
-            splash = QSplashScreen(splash_pixmap, Qt.WindowType.WindowStaysOnTopHint)
+    # --- Splash (visible immediately) ---
+    splash_gif_path = resource_path("splash_animation.gif")
 
-        splash.show()
-        app.processEvents()
-        main_window = AssameseTypingApp()
-        app.processEvents()
+    if os.path.exists(splash_gif_path):
+        splash = QLabel()
+        splash.setWindowFlags(Qt.WindowType.SplashScreen |
+                              Qt.WindowType.WindowStaysOnTopHint |
+                              Qt.WindowType.FramelessWindowHint)
+        splash.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        movie = QMovie(splash_gif_path)
+        splash.setMovie(movie)
+        movie.start()
+    else:
+        splash_label = QLabel()
+        splash_label.setFixedSize(450, 250)
+        splash_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        splash_label.setStyleSheet("""
+            QLabel {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2C3E50, stop:1 #3498DB);
+                color: white;
+                font-family: "Segoe UI";
+                font-size: 26px;
+                font-weight: bold;
+                border-radius: 12px;
+                padding: 20px;
+            }
+        """)
+        splash_label.setText("সহজ-Sahaj-v3.0\n\nLoading, please wait...\n\nDeveloped by Nazmul Hussain")
+        splash_pixmap = splash_label.grab()
+        splash = QSplashScreen(splash_pixmap, Qt.WindowType.WindowStaysOnTopHint)
 
-        def show_main_window():
-            import sys
-            if sys.platform == "win32":
-                import ctypes
-                hwnd = int(main_window.winId())
-                foreground_hwnd = ctypes.windll.user32.GetForegroundWindow()
+    splash.show()
+    app.processEvents()
 
-                if foreground_hwnd and foreground_hwnd != hwnd:
-                    foreground_thread_id = ctypes.windll.user32.GetWindowThreadProcessId(foreground_hwnd, None)
-                    current_thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
-                    ctypes.windll.user32.AttachThreadInput(current_thread_id, foreground_thread_id, True)
-                    ctypes.windll.user32.ShowWindow(hwnd, 5)
-                    ctypes.windll.user32.SetForegroundWindow(hwnd)
-                    ctypes.windll.user32.AttachThreadInput(current_thread_id, foreground_thread_id, False)
+    # Start the background model-copy thread NOW that the splash is up
+    setup_thread.start()
 
-            main_window.show()
-            main_window.raise_()
-            main_window.activateWindow()
+    # --- Create the main window but keep it behind the splash ---
+    main_window = AssameseTypingApp()
+    # Show it immediately (splash is on top, so user still sees splash)
+    main_window.show()
+    main_window.raise_()
+    app.processEvents()
+
+    def finish_startup():
+        # If ASR or the main loader is still running, hint to the user.
+        loading = False
+        try:
+            if getattr(main_window, "asr_loader_thread", None) and \
+                    main_window.asr_loader_thread.isRunning():
+                loading = True
+            if getattr(main_window, "loader_thread", None) and \
+                    main_window.loader_thread.isRunning():
+                loading = True
+        except Exception:
+            pass
+
+        if loading:
+            try:
+                main_window.network_status_label.setText("⏳ Warming up AI...")
+                main_window.network_status_label.setStyleSheet("color: #fd7e14;")
+            except Exception:
+                pass
+
+        try:
             splash.close()
+        except Exception:
+            pass
 
-        QTimer.singleShot(7000, show_main_window)
-        sys.exit(app.exec())
+    QTimer.singleShot(7000, finish_startup)
+    sys.exit(app.exec())
